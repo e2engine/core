@@ -6,6 +6,7 @@ import (
 	"net"
 	"testing"
 
+	e2enginegrpc "github.com/e2engine/instrumentation-go/grpc"
 	grpcpkg "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/execute/runtime"
-	"github.com/e2engine/core/pkg/keys"
 	"github.com/e2engine/core/pkg/log"
 )
 
@@ -85,10 +85,12 @@ func TestRawCodec(t *testing.T) {
 }
 
 func TestCloneMetadata(t *testing.T) {
-	source := metadata.Pairs(
-		"x-test", "first",
-		"x-test", "second",
-		string(keys.E2EngineTestExecutionID), "execution-1",
+	source := e2enginegrpc.WithTestExecutionID(
+		metadata.Pairs(
+			"x-test", "first",
+			"x-test", "second",
+		),
+		"execution-1",
 	)
 
 	got := cloneMetadata(source)
@@ -103,9 +105,10 @@ func TestCloneMetadata(t *testing.T) {
 		)
 	}
 
-	if _, ok := got[string(keys.E2EngineTestExecutionID)]; ok {
-		t.Fatal(
-			"expected execution ID metadata to be excluded",
+	if len(got) != 1 {
+		t.Fatalf(
+			"expected execution ID metadata to be excluded, got %#v",
+			got,
 		)
 	}
 
@@ -259,9 +262,11 @@ func TestRouter(t *testing.T) {
 
 	ctx := metadata.NewOutgoingContext(
 		context.Background(),
-		metadata.Pairs(
-			"x-request", "request-value",
-			string(keys.E2EngineTestExecutionID),
+		e2enginegrpc.WithTestExecutionID(
+			metadata.Pairs(
+				"x-request",
+				"request-value",
+			),
 			"execution-1",
 		),
 	)
@@ -305,11 +310,7 @@ func TestRouter(t *testing.T) {
 		)
 	}
 
-	if len(
-		upstreamMetadata.Get(
-			string(keys.E2EngineTestExecutionID),
-		),
-	) != 0 {
+	if id := e2enginegrpc.TestExecutionID(upstreamMetadata); id != "" {
 		t.Fatal(
 			"expected execution ID not to be forwarded upstream",
 		)
@@ -366,9 +367,10 @@ func TestRouter(t *testing.T) {
 		)
 	}
 
-	if _, ok := got.GRPC.Request.Metadata[string(keys.E2EngineTestExecutionID)]; ok {
-		t.Fatal(
-			"expected execution ID to be excluded from recorded metadata",
+	if id := e2enginegrpc.TestExecutionID(got.GRPC.Request.Metadata); id != "" {
+		t.Fatalf(
+			"expected execution ID to be excluded from recorded metadata, got %q",
+			id,
 		)
 	}
 
@@ -467,8 +469,8 @@ func TestRouterUpstreamError(t *testing.T) {
 
 	ctx := metadata.NewOutgoingContext(
 		context.Background(),
-		metadata.Pairs(
-			string(keys.E2EngineTestExecutionID),
+		e2enginegrpc.WithTestExecutionID(
+			nil,
 			"execution-1",
 		),
 	)

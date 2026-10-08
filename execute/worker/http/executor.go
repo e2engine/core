@@ -6,9 +6,10 @@ import (
 	"io"
 	"net/http"
 
+	e2enginehttp "github.com/e2engine/instrumentation-go/http"
+
 	"github.com/e2engine/core/execute"
 	"github.com/e2engine/core/model"
-	"github.com/e2engine/core/pkg/keys"
 )
 
 type TestExecutor struct {
@@ -94,7 +95,7 @@ func buildHTTPRequest(
 		}
 	}
 
-	req.Header.Set(string(keys.E2EngineTestExecutionID), testExecutionID)
+	req.Header = e2enginehttp.WithTestExecutionID(req.Header, testExecutionID)
 
 	if spec.Body != "" &&
 		req.Header.Get("Content-Type") == "" {

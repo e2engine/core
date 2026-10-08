@@ -3,24 +3,20 @@ package keys
 import "github.com/ygrebnov/keys"
 
 var (
-	file                  = keys.Factory(keys.WithSegments("file"))
-	entity                = keys.Factory(keys.WithSegments("entity"))
-	cursor                = keys.Factory(keys.WithSegments("cursor"))
-	spec                  = keys.Factory(keys.WithSegments("spec"))
-	environment           = keys.Factory(keys.WithSegments("environment"))
-	environmentService    = keys.Factory(keys.WithSegments("environment", "service"))
-	request               = keys.Factory(keys.WithSegments("request"))
-	execution             = keys.Factory(keys.WithSegments("execution"))
-	test                  = keys.Factory(keys.WithSegments("test"))
-	testsuite             = keys.Factory(keys.WithSegments("testsuite"))
-	http                  = keys.Factory(keys.WithSegments("http"))
-	grpc                  = keys.Factory(keys.WithSegments("grpc"))
-	e2engineTestExecution = keys.Factory(
-		keys.WithSegments("e2engine", "test", "execution"),
-		keys.WithSeparator('-'),
-	)
-	message = keys.Factory(keys.WithSegments("message"))
-	socket  = keys.Factory(keys.WithSegments("socket"))
+	file               = keys.Factory(keys.WithSegments("file"))
+	entity             = keys.Factory(keys.WithSegments("entity"))
+	cursor             = keys.Factory(keys.WithSegments("cursor"))
+	spec               = keys.Factory(keys.WithSegments("spec"))
+	environment        = keys.Factory(keys.WithSegments("environment"))
+	environmentService = keys.Factory(keys.WithSegments("environment", "service"))
+	request            = keys.Factory(keys.WithSegments("request"))
+	execution          = keys.Factory(keys.WithSegments("execution"))
+	test               = keys.Factory(keys.WithSegments("test"))
+	testsuite          = keys.Factory(keys.WithSegments("testsuite"))
+	http               = keys.Factory(keys.WithSegments("http"))
+	grpc               = keys.Factory(keys.WithSegments("grpc"))
+	message            = keys.Factory(keys.WithSegments("message"))
+	socket             = keys.Factory(keys.WithSegments("socket"))
 )
 
 var (
@@ -64,8 +60,6 @@ var (
 	TestSuiteSelector            = testsuite("selector")
 	TestSuiteMaxTestsNumber      = testsuite("max.tests.number")
 	TestSuiteResolvedTestsNumber = testsuite("resolved.tests.number")
-
-	E2EngineTestExecutionID = e2engineTestExecution("id")
 
 	MessageType         = message("type")
 	SocketAddress       = socket("address")

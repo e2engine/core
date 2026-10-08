@@ -9,9 +9,10 @@ import (
 	"reflect"
 	"testing"
 
+	e2enginehttp "github.com/e2engine/instrumentation-go/http"
+
 	"github.com/e2engine/core/execute"
 	"github.com/e2engine/core/model"
-	"github.com/e2engine/core/pkg/keys"
 )
 
 func TestBuildHTTPRequest(t *testing.T) {
@@ -112,15 +113,11 @@ func TestBuildHTTPRequest(t *testing.T) {
 				)
 			}
 
-			if req.Header.Get(
-				string(keys.E2EngineTestExecutionID),
-			) != "execution-123" {
+			if id := e2enginehttp.TestExecutionID(req.Header); id != "execution-123" {
 				t.Errorf(
 					"expected execution ID header %q, got %q",
 					"execution-123",
-					req.Header.Get(
-						string(keys.E2EngineTestExecutionID),
-					),
+					id,
 				)
 			}
 
@@ -222,15 +219,15 @@ func TestBuildHTTPRequestHeaders(t *testing.T) {
 	spec := &model.HTTPRequestSpec{
 		Method: nethttp.MethodGet,
 		URL:    "https://example.com/users",
-		Headers: nethttp.Header{
-			"X-Test": {
-				"value-1",
-				"value-2",
+		Headers: e2enginehttp.WithTestExecutionID(
+			nethttp.Header{
+				"X-Test": {
+					"value-1",
+					"value-2",
+				},
 			},
-			string(keys.E2EngineTestExecutionID): {
-				"user-value",
-			},
-		},
+			"user-value",
+		),
 	}
 
 	req, err := buildHTTPRequest(
@@ -255,17 +252,10 @@ func TestBuildHTTPRequestHeaders(t *testing.T) {
 		)
 	}
 
-	values := req.Header.Values(
-		string(keys.E2EngineTestExecutionID),
-	)
-
-	if !reflect.DeepEqual(
-		values,
-		[]string{"execution-123"},
-	) {
+	if id := e2enginehttp.TestExecutionID(req.Header); id != "execution-123" {
 		t.Errorf(
-			"expected execution header to be overridden, got %#v",
-			values,
+			"expected execution header to be overridden, got %s",
+			id,
 		)
 	}
 }
@@ -413,15 +403,11 @@ func TestExecutorExecute(t *testing.T) {
 				w nethttp.ResponseWriter,
 				r *nethttp.Request,
 			) {
-				if r.Header.Get(
-					string(keys.E2EngineTestExecutionID),
-				) != "execution-123" {
+				if id := e2enginehttp.TestExecutionID(r.Header); id != "execution-123" {
 					t.Errorf(
 						"expected execution ID %q, got %q",
 						"execution-123",
-						r.Header.Get(
-							string(keys.E2EngineTestExecutionID),
-						),
+						id,
 					)
 				}
 

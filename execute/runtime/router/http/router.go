@@ -8,6 +8,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 
+	e2enginehttp "github.com/e2engine/instrumentation-go/http"
 	"github.com/ygrebnov/errorc"
 
 	"github.com/e2engine/core/execute/call"
@@ -133,7 +134,7 @@ func (r *Router) Mount(ctx context.Context) error {
 			proxy.ServeHTTP(responseRecorder, req)
 
 			r.calls.Record(call.Call{
-				TestExecutionID: req.Header.Get(string(keys.E2EngineTestExecutionID)),
+				TestExecutionID: e2enginehttp.TestExecutionID(req.Header),
 				ServiceID:       route.ServiceID,
 				HTTP: &call.HTTPCall{
 					Request:  request,

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/e2engine/core/pkg/keys"
+	e2enginehttp "github.com/e2engine/instrumentation-go/http"
 )
 
 func TestCaptureRequest(t *testing.T) {
@@ -22,10 +22,8 @@ func TestCaptureRequest(t *testing.T) {
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Test", "test")
-	req.Header.Set(
-		string(keys.E2EngineTestExecutionID),
-		"execution-1",
-	)
+
+	req.Header = e2enginehttp.WithTestExecutionID(req.Header, "execution-1")
 
 	got, err := captureRequest(req)
 	if err != nil {
@@ -61,11 +59,10 @@ func TestCaptureRequest(t *testing.T) {
 		)
 	}
 
-	if got.Headers.Get(
-		string(keys.E2EngineTestExecutionID),
-	) != "" {
-		t.Fatal(
-			"expected execution ID header to be removed",
+	if id := e2enginehttp.TestExecutionID(got.Headers); id != "" {
+		t.Errorf(
+			"expected execution ID header to be removed, got %q",
+			id,
 		)
 	}
 

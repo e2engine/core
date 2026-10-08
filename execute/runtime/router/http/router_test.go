@@ -10,9 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	e2enginehttp "github.com/e2engine/instrumentation-go/http"
+
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/execute/runtime"
-	"github.com/e2engine/core/pkg/keys"
 	"github.com/e2engine/core/pkg/log"
 )
 
@@ -83,10 +84,8 @@ func TestRouter(t *testing.T) {
 	}
 
 	req.Header.Set("X-Test", "value")
-	req.Header.Set(
-		string(keys.E2EngineTestExecutionID),
-		"execution-1",
-	)
+
+	req.Header = e2enginehttp.WithTestExecutionID(req.Header, "execution-1")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -188,11 +187,10 @@ func TestRouter(t *testing.T) {
 		)
 	}
 
-	if got.HTTP.Request.Headers.Get(
-		string(keys.E2EngineTestExecutionID),
-	) != "" {
-		t.Fatal(
-			"expected execution ID header to be excluded from recorded request",
+	if id := e2enginehttp.TestExecutionID(got.HTTP.Request.Headers); id != "" {
+		t.Errorf(
+			"expected execution ID header to be removed, got %q",
+			id,
 		)
 	}
 
@@ -274,10 +272,7 @@ func TestRouterProxyError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot create request: %v", err)
 	}
-	req.Header.Set(
-		string(keys.E2EngineTestExecutionID),
-		"execution-1",
-	)
+	req.Header = e2enginehttp.WithTestExecutionID(req.Header, "execution-1")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

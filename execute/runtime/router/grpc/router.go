@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 
+	e2engine "github.com/e2engine/instrumentation-go"
+	e2enginegrpc "github.com/e2engine/instrumentation-go/grpc"
 	"github.com/ygrebnov/errorc"
 	grpcpkg "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -266,25 +268,19 @@ func (r *Router) newHandler(
 			)
 		}
 
-		incomingMetadata, _ :=
-			metadata.FromIncomingContext(
-				stream.Context(),
-			)
+		ctx := e2enginegrpc.Extract(stream.Context())
+		testExecutionID := e2engine.TestExecutionID(ctx)
 
-		var testExecutionID string
-		if values := incomingMetadata.Get(
-			string(keys.E2EngineTestExecutionID),
-		); len(values) > 0 {
-			testExecutionID = values[0]
-		}
+		incomingMetadata, _ := metadata.FromIncomingContext(
+			stream.Context(),
+		)
 
-		outgoingMetadata := incomingMetadata.Copy()
-		outgoingMetadata.Delete(
-			string(keys.E2EngineTestExecutionID),
+		outgoingMetadata := e2enginegrpc.WithoutTestExecutionID(
+			incomingMetadata,
 		)
 
 		outgoingContext := metadata.NewOutgoingContext(
-			stream.Context(),
+			ctx,
 			outgoingMetadata,
 		)
 
@@ -354,19 +350,15 @@ func (r *Router) newHandler(
 	}
 }
 
-func cloneMetadata(
-	source metadata.MD,
-) map[string][]string {
+func cloneMetadata(source metadata.MD) map[string][]string {
+	source = e2enginegrpc.WithoutTestExecutionID(source)
+
 	result := make(
 		map[string][]string,
 		len(source),
 	)
 
 	for key, values := range source {
-		if key == string(keys.E2EngineTestExecutionID) {
-			continue
-		}
-
 		result[key] = append(
 			[]string(nil),
 			values...,
