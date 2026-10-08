@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	e2enginegrpc "github.com/e2engine/instrumentation-go/grpc"
 	"github.com/ygrebnov/errorc"
 	ggrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -83,10 +84,7 @@ func (e *TestExecutor) Execute(
 	defer connection.Close()
 
 	callMetadata := metadata.MD(spec.Metadata).Copy()
-	callMetadata.Set(
-		string(keys.E2EngineTestExecutionID),
-		job.ExecutionID,
-	)
+	callMetadata = e2enginegrpc.WithTestExecutionID(callMetadata, job.ExecutionID)
 
 	callCtx := metadata.NewOutgoingContext(
 		ctx,

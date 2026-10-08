@@ -5,14 +5,16 @@ import (
 	"io"
 	"net/http"
 
+	e2enginehttp "github.com/e2engine/instrumentation-go/http"
+
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/internal/util"
-	"github.com/e2engine/core/pkg/keys"
 )
 
 func captureRequest(req *http.Request) (call.HTTPRequest, error) {
-	header := util.CloneHTTPHeader(req.Header)
-	header.Del(string(keys.E2EngineTestExecutionID))
+	header := e2enginehttp.WithoutTestExecutionID(
+		req.Header,
+	)
 
 	query := util.CloneQuery(req.URL.Query())
 

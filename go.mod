@@ -4,6 +4,9 @@ go 1.27
 
 require (
 	github.com/bufbuild/protocompile v0.14.1
+	github.com/e2engine/instrumentation-go v0.1.0
+	github.com/e2engine/instrumentation-go/grpc v0.1.0
+	github.com/e2engine/instrumentation-go/http v0.1.0
 	github.com/ygrebnov/errorc v0.6.1
 	github.com/ygrebnov/keys v0.2.0
 	github.com/ygrebnov/log v0.4.4

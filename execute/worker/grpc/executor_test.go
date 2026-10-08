@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"testing"
 
+	e2enginegrpc "github.com/e2engine/instrumentation-go/grpc"
 	ggrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/reflect/protodesc"
@@ -18,7 +19,6 @@ import (
 	servicegrpc "github.com/e2engine/core/execute/runtime/service/grpc"
 	"github.com/e2engine/core/model"
 	coreerrors "github.com/e2engine/core/pkg/errors"
-	"github.com/e2engine/core/pkg/keys"
 )
 
 func TestFindService(t *testing.T) {
@@ -325,17 +325,10 @@ func TestExecutorExecute(t *testing.T) {
 					t.Error("expected request metadata")
 				}
 
-				executionIDs := md.Get(
-					string(keys.E2EngineTestExecutionID),
-				)
-
-				if !reflect.DeepEqual(
-					executionIDs,
-					[]string{"execution-123"},
-				) {
+				if id := e2enginegrpc.TestExecutionID(md); id != "execution-123" {
 					t.Errorf(
-						"unexpected execution ID metadata: %#v",
-						executionIDs,
+						"unexpected execution ID metadata: %s",
+						id,
 					)
 				}
 
