@@ -4,10 +4,16 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/e2engine/instrumentation-go v0.1.0 h1:2vp9pen83xfcQPhGTRcGMD86m6Tvhq7HB9GcahttGqM=
 github.com/e2engine/instrumentation-go v0.1.0/go.mod h1:zpWF7koAp+vFqYAfOx3mOJFn4GpLtzetguAs8n7+wIE=
+github.com/e2engine/instrumentation-go v0.1.1 h1:pkOQIQWWkGqHdU1F/b0tCtpFyNDc09kKebYZElHZS9k=
+github.com/e2engine/instrumentation-go v0.1.1/go.mod h1:zpWF7koAp+vFqYAfOx3mOJFn4GpLtzetguAs8n7+wIE=
 github.com/e2engine/instrumentation-go/grpc v0.1.0 h1:zSU2eIL2gA/0n7HjQh4LTA3vI5u5hK7g63Psi+HP4EU=
 github.com/e2engine/instrumentation-go/grpc v0.1.0/go.mod h1:b9oDN/J5Pdv8Ny/qeHfFjZ7UwF7KHesKSm//p2b1upw=
+github.com/e2engine/instrumentation-go/grpc v0.1.1 h1:0sqxF3oCdxdVaJwzTshaf79VMXglVHJQ1bLte7vnH14=
+github.com/e2engine/instrumentation-go/grpc v0.1.1/go.mod h1:l74IeAGD1lOKbrc/rqQJ3qHvrQF1rvefC50v8unCo1U=
 github.com/e2engine/instrumentation-go/http v0.1.0 h1:16VY0vkSqgSNJcYUT+tE3vn1uPEBcgL8bHLjKugnOvo=
 github.com/e2engine/instrumentation-go/http v0.1.0/go.mod h1:IPrXs81CHYPSn2NeKInAqZGFgfvHXOF1KsESVMxJegs=
+github.com/e2engine/instrumentation-go/http v0.1.1 h1:Xu+yRVgv6jsq7eBLzeOeccwM0dyNz2ga1ybaXNUFhTk=
+github.com/e2engine/instrumentation-go/http v0.1.1/go.mod h1:dFgPXV8kq17HHTecABNLaAio8td8LtdiNj9cZYS6Kng=
 github.com/golang/protobuf v1.5.4 h1:i7eJL8qZTpSEXOPTxNKhASYpMn+8e5Q6AdndVa1dWek=
 github.com/golang/protobuf v1.5.4/go.mod h1:lnTiLA8Wa4RWRcIUkrtSVa5nRhsEGBg48fD6rSs7xps=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
