@@ -53,7 +53,9 @@ func (e *Evaluator) EvaluateResponse(
 		return err
 	}
 
-	result.Summary.Response.GRPC = &model.TestExecutionGRPCResponseSummary{}
+	result.Summary.Response = &model.TestExecutionResponseSummary{
+		GRPC: &model.TestExecutionGRPCResponseSummary{},
+	}
 
 	actualStatus := status.Code(callErr)
 

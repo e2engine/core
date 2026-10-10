@@ -38,23 +38,18 @@ type TestExecutionSummary struct {
 	Error string `json:"error,omitempty" yaml:"error,omitempty"`
 
 	// Request captures the resolved request that was executed.
-	Request TestExecutionRequestSummary `json:"request" yaml:"request"`
+	Request *TestExecutionRequestSummary `json:"request,omitempty" yaml:"request,omitempty"`
 
 	// Response captures what we observed.
-	Response TestExecutionResponseSummary `json:"response" yaml:"response"`
+	Response *TestExecutionResponseSummary `json:"response,omitempty" yaml:"response,omitempty"`
 
-	// Expect captures the assertions that were evaluated.
-	Expect TestExecutionExpectSummary `json:"expect" yaml:"expect"`
-
-	// Calls captures service calls observed by the environment router.
-	Calls []TestExecutionCallSummary `json:"calls,omitempty" yaml:"calls,omitempty"`
+	// ExpectedCalls captures the service call expectations that were evaluated.
+	ExpectedCalls []TestExecutionCallExpectationSummary `json:"expected_calls,omitempty" yaml:"expected_calls,omitempty"`
 
 	// Deviations contains assertion failures.
 	// When empty and Error is empty, Status is typically "passed".
 	Deviations []TestExecutionDeviation `json:"deviations,omitempty" yaml:"deviations,omitempty"`
 }
-
-// TODO: Add setters.
 
 type TestExecutionRequestSummary struct {
 	HTTP *TestExecutionHTTPRequestSummary `json:"http,omitempty" yaml:"http,omitempty"`
@@ -64,13 +59,6 @@ type TestExecutionRequestSummary struct {
 type TestExecutionResponseSummary struct {
 	HTTP *TestExecutionHTTPResponseSummary `json:"http,omitempty" yaml:"http,omitempty"`
 	GRPC *TestExecutionGRPCResponseSummary `json:"grpc,omitempty" yaml:"grpc,omitempty"`
-}
-
-type TestExecutionExpectSummary struct {
-	HTTP *TestExecutionHTTPExpectSummary `json:"http,omitempty" yaml:"http,omitempty"`
-	GRPC *TestExecutionGRPCExpectSummary `json:"grpc,omitempty" yaml:"grpc,omitempty"`
-
-	Calls []TestExecutionCallExpectationSummary `json:"calls,omitempty" yaml:"calls,omitempty"`
 }
 
 type TestExecutionHTTPRequestSummary struct {
@@ -100,33 +88,6 @@ type TestExecutionGRPCResponseSummary struct {
 	Message  map[string]any      `json:"message,omitempty" yaml:"message,omitempty"`
 }
 
-type TestExecutionHTTPExpectSummary struct {
-	StatusCode int    `json:"status_code,omitempty" yaml:"status_code,omitempty"`
-	BodyJSON   string `json:"body_json,omitempty" yaml:"body_json,omitempty"`
-}
-
-type TestExecutionGRPCExpectSummary struct {
-	Status  string         `json:"status,omitempty" yaml:"status,omitempty"`
-	Message map[string]any `json:"message,omitempty" yaml:"message,omitempty"`
-}
-
-type TestExecutionGRPCCallSummary struct {
-	Request  TestExecutionGRPCCallRequestSummary  `json:"request" yaml:"request"`
-	Response TestExecutionGRPCCallResponseSummary `json:"response" yaml:"response"`
-}
-
-type TestExecutionGRPCCallRequestSummary struct {
-	RPC      string              `json:"rpc,omitempty" yaml:"rpc,omitempty"`
-	Metadata map[string][]string `json:"metadata,omitempty" yaml:"metadata,omitempty"`
-	Message  []byte              `json:"message,omitempty" yaml:"message,omitempty"`
-}
-
-type TestExecutionGRPCCallResponseSummary struct {
-	Status   string              `json:"status,omitempty" yaml:"status,omitempty"`
-	Metadata map[string][]string `json:"metadata,omitempty" yaml:"metadata,omitempty"`
-	Message  []byte              `json:"message,omitempty" yaml:"message,omitempty"`
-}
-
 type TestExecutionGRPCCallExpectationSummary struct {
 	Service  string              `json:"service,omitempty" yaml:"service,omitempty"`
 	Method   string              `json:"method,omitempty" yaml:"method,omitempty"`
@@ -148,33 +109,6 @@ type TestExecutionHTTPCallExpectationSummary struct {
 	Query    map[string][]string `json:"query,omitempty" yaml:"query,omitempty"`
 	Headers  map[string][]string `json:"headers,omitempty" yaml:"headers,omitempty"`
 	BodyJSON string              `json:"body_json,omitempty" yaml:"body_json,omitempty"`
-}
-
-type TestExecutionCallSummary struct {
-	ServiceID string `json:"service_id" yaml:"service_id"`
-
-	HTTP *TestExecutionHTTPCallSummary `json:"http,omitempty" yaml:"http,omitempty"`
-	GRPC *TestExecutionGRPCCallSummary `json:"grpc,omitempty" yaml:"grpc,omitempty"`
-}
-
-type TestExecutionHTTPCallSummary struct {
-	Request  TestExecutionHTTPCallRequestSummary  `json:"request" yaml:"request"`
-	Response TestExecutionHTTPCallResponseSummary `json:"response" yaml:"response"`
-}
-
-type TestExecutionHTTPCallRequestSummary struct {
-	Method   string              `json:"method,omitempty" yaml:"method,omitempty"`
-	Path     string              `json:"path,omitempty" yaml:"path,omitempty"`
-	Query    map[string][]string `json:"query,omitempty" yaml:"query,omitempty"`
-	Headers  map[string][]string `json:"headers,omitempty" yaml:"headers,omitempty"`
-	BodyJSON string              `json:"body_json,omitempty" yaml:"body_json,omitempty"`
-}
-
-type TestExecutionHTTPCallResponseSummary struct {
-	StatusCode int                 `json:"status_code,omitempty" yaml:"status_code,omitempty"`
-	Headers    map[string][]string `json:"headers,omitempty" yaml:"headers,omitempty"`
-	BodyJSON   string              `json:"body_json,omitempty" yaml:"body_json,omitempty"`
-	BodyText   string              `json:"body_text,omitempty" yaml:"body_text,omitempty"`
 }
 
 type TestExecutionDeviation struct {

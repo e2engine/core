@@ -432,20 +432,14 @@ func modelTestExecution() *model.TestExecution {
 
 func modelTestExecutionSummary() *model.TestExecutionSummary {
 	return &model.TestExecutionSummary{
-		Request: model.TestExecutionRequestSummary{
+		Request: &model.TestExecutionRequestSummary{
 			HTTP: &model.TestExecutionHTTPRequestSummary{
 				Method: "GET",
 				URL:    "http://localhost:8080/health",
 			},
 		},
-		Response: model.TestExecutionResponseSummary{
+		Response: &model.TestExecutionResponseSummary{
 			HTTP: &model.TestExecutionHTTPResponseSummary{
-				StatusCode: 200,
-				BodyJSON:   `{"status":"ok"}`,
-			},
-		},
-		Expect: model.TestExecutionExpectSummary{
-			HTTP: &model.TestExecutionHTTPExpectSummary{
 				StatusCode: 200,
 				BodyJSON:   `{"status":"ok"}`,
 			},

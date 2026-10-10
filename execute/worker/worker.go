@@ -8,7 +8,6 @@ import (
 	"github.com/ygrebnov/errorc"
 
 	"github.com/e2engine/core/execute"
-	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/execute/evaluate"
 	grpcservice "github.com/e2engine/core/execute/runtime/service/grpc"
 	grpcworker "github.com/e2engine/core/execute/worker/grpc"
@@ -123,9 +122,6 @@ func (w *Worker) Execute(
 
 		return result, nil
 	}
-
-	result.Summary.Calls =
-		newCallsSummary(callStore.Get(call.Filter{TestExecutionID: job.ExecutionID}))
 
 	if len(result.Summary.Deviations) == 0 {
 		result.Status = model.ExecutionStatusPassed

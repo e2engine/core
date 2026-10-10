@@ -322,10 +322,10 @@ func TestWorkerExecuteExecutorError(t *testing.T) {
 		)
 	}
 
-	if result.Summary.Calls != nil {
+	if result.Summary.ExpectedCalls != nil {
 		t.Errorf(
-			"expected no calls summary, got %#v",
-			result.Summary.Calls,
+			"expected no expected calls, got %#v",
+			result.Summary.ExpectedCalls,
 		)
 	}
 
