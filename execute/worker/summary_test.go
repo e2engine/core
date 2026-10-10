@@ -3,10 +3,8 @@ package worker
 import (
 	"net/http"
 	"net/url"
-	"reflect"
 	"testing"
 
-	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/model"
 )
 
@@ -36,20 +34,20 @@ func TestNewSummaryHTTP(t *testing.T) {
 
 	summary := newSummary(spec)
 
-	if summary.Request.HTTP == nil {
-		t.Fatal("expected HTTP request summary")
+	if summary.Request == nil {
+		t.Fatal("expected non-nil request summary")
 	}
 
-	if summary.Expect.HTTP == nil {
-		t.Fatal("expected HTTP expect summary")
+	if summary.Request.HTTP == nil {
+		t.Fatal("expected HTTP request summary")
 	}
 
 	if summary.Request.GRPC != nil {
 		t.Fatal("expected nil gRPC request summary")
 	}
 
-	if summary.Expect.GRPC != nil {
-		t.Fatal("expected nil gRPC expect summary")
+	if summary.ExpectedCalls != nil {
+		t.Fatal("expected nil expected calls summary")
 	}
 
 	if summary.Request.HTTP.Method != http.MethodPost {
@@ -72,22 +70,6 @@ func TestNewSummaryHTTP(t *testing.T) {
 			"expected compact body %q, got %q",
 			`{"id":42}`,
 			summary.Request.HTTP.BodyJSON,
-		)
-	}
-
-	if summary.Expect.HTTP.StatusCode != http.StatusCreated {
-		t.Errorf(
-			"expected status %d, got %d",
-			http.StatusCreated,
-			summary.Expect.HTTP.StatusCode,
-		)
-	}
-
-	if summary.Expect.HTTP.BodyJSON != `{"status":"created"}` {
-		t.Errorf(
-			"expected compact body %q, got %q",
-			`{"status":"created"}`,
-			summary.Expect.HTTP.BodyJSON,
 		)
 	}
 
@@ -125,20 +107,20 @@ func TestNewSummaryGRPC(t *testing.T) {
 
 	summary := newSummary(spec)
 
-	if summary.Request.GRPC == nil {
-		t.Fatal("expected gRPC request summary")
+	if summary.Request == nil {
+		t.Fatal("expected non-nil request summary")
 	}
 
-	if summary.Expect.GRPC == nil {
-		t.Fatal("expected gRPC expect summary")
+	if summary.Request.GRPC == nil {
+		t.Fatal("expected gRPC request summary")
 	}
 
 	if summary.Request.HTTP != nil {
 		t.Fatal("expected nil HTTP request summary")
 	}
 
-	if summary.Expect.HTTP != nil {
-		t.Fatal("expected nil HTTP expect summary")
+	if summary.ExpectedCalls != nil {
+		t.Fatal("expected nil expected calls summary")
 	}
 
 	if summary.Request.GRPC.Service != "users.v1.UserService" {
@@ -155,16 +137,8 @@ func TestNewSummaryGRPC(t *testing.T) {
 		)
 	}
 
-	if summary.Expect.GRPC.Status != "OK" {
-		t.Errorf(
-			"unexpected status %q",
-			summary.Expect.GRPC.Status,
-		)
-	}
-
 	spec.Request.GRPC.Metadata["x-request-id"][0] = "changed"
 	spec.Request.GRPC.Message["id"] = "changed"
-	spec.Expect.GRPC.Message["name"] = "changed"
 
 	if actual := summary.Request.GRPC.Metadata["x-request-id"][0]; actual != "123" {
 		t.Error("expected request metadata to be cloned")
@@ -172,10 +146,6 @@ func TestNewSummaryGRPC(t *testing.T) {
 
 	if actual := summary.Request.GRPC.Message["id"]; actual != "42" {
 		t.Error("expected request message to be cloned")
-	}
-
-	if actual := summary.Expect.GRPC.Message["name"]; actual != "Yaroslav" {
-		t.Error("expected expected message to be cloned")
 	}
 }
 
@@ -294,152 +264,5 @@ func TestNewExpectedCallsSummary(t *testing.T) {
 
 	if grpcSummary.GRPC.Message["id"] != "42" {
 		t.Error("expected message to be cloned")
-	}
-}
-
-func TestNewCallsSummaryEmpty(t *testing.T) {
-	if actual := newCallsSummary(nil); actual != nil {
-		t.Errorf(
-			"expected nil, got %#v",
-			actual,
-		)
-	}
-}
-
-func TestNewCallsSummary(t *testing.T) {
-	calls := []call.Call{
-		{
-			ServiceID: "http-service",
-			HTTP: &call.HTTPCall{
-				Request: call.HTTPRequest{
-					Method: http.MethodPost,
-					Path:   "/users",
-					Query: url.Values{
-						"active": {"true"},
-					},
-					Headers: http.Header{
-						"Content-Type": {"application/json"},
-					},
-					Body: []byte(`{
-						"id": 42
-					}`),
-				},
-				Response: call.HTTPResponse{
-					StatusCode: http.StatusCreated,
-					Headers: http.Header{
-						"Content-Type": {"application/json"},
-					},
-					Body: []byte(`{
-						"status": "created"
-					}`),
-				},
-			},
-		},
-		{
-			ServiceID: "grpc-service",
-			GRPC: &call.GRPCCall{
-				Request: call.GRPCRequest{
-					RPC: "/users.v1.UserService/GetUser",
-					Metadata: map[string][]string{
-						"x-request-id": {"123"},
-					},
-					Message: []byte{1, 2, 3},
-				},
-				Response: call.GRPCResponse{
-					Status: "OK",
-					Metadata: map[string][]string{
-						"x-response-id": {"456"},
-					},
-					Message: []byte{4, 5, 6},
-				},
-			},
-		},
-	}
-
-	summary := newCallsSummary(calls)
-
-	if len(summary) != 2 {
-		t.Fatalf(
-			"expected 2 summaries, got %d",
-			len(summary),
-		)
-	}
-
-	httpSummary := summary[0]
-	if httpSummary.HTTP == nil {
-		t.Fatal("expected HTTP call summary")
-	}
-
-	if httpSummary.HTTP.Request.BodyJSON != `{"id":42}` {
-		t.Errorf(
-			"unexpected request body %q",
-			httpSummary.HTTP.Request.BodyJSON,
-		)
-	}
-
-	if httpSummary.HTTP.Response.BodyJSON !=
-		`{"status":"created"}` {
-		t.Errorf(
-			"unexpected response body %q",
-			httpSummary.HTTP.Response.BodyJSON,
-		)
-	}
-
-	grpcSummary := summary[1]
-	if grpcSummary.GRPC == nil {
-		t.Fatal("expected gRPC call summary")
-	}
-
-	if grpcSummary.GRPC.Request.RPC !=
-		"/users.v1.UserService/GetUser" {
-		t.Errorf(
-			"unexpected RPC %q",
-			grpcSummary.GRPC.Request.RPC,
-		)
-	}
-
-	calls[0].HTTP.Request.Query["active"][0] = "false"
-	calls[0].HTTP.Request.Headers["Content-Type"][0] = "changed"
-	calls[0].HTTP.Response.Headers["Content-Type"][0] = "changed"
-
-	calls[1].GRPC.Request.Metadata["x-request-id"][0] = "changed"
-	calls[1].GRPC.Request.Message[0] = 100
-	calls[1].GRPC.Response.Metadata["x-response-id"][0] = "changed"
-	calls[1].GRPC.Response.Message[0] = 100
-
-	if httpSummary.HTTP.Request.Query["active"][0] != "true" {
-		t.Error("expected request query to be cloned")
-	}
-
-	if httpSummary.HTTP.Request.Headers["Content-Type"][0] !=
-		"application/json" {
-		t.Error("expected request headers to be cloned")
-	}
-
-	if httpSummary.HTTP.Response.Headers["Content-Type"][0] !=
-		"application/json" {
-		t.Error("expected response headers to be cloned")
-	}
-
-	if grpcSummary.GRPC.Request.Metadata["x-request-id"][0] != "123" {
-		t.Error("expected request metadata to be cloned")
-	}
-
-	if !reflect.DeepEqual(
-		grpcSummary.GRPC.Request.Message,
-		[]byte{1, 2, 3},
-	) {
-		t.Error("expected request message to be cloned")
-	}
-
-	if grpcSummary.GRPC.Response.Metadata["x-response-id"][0] != "456" {
-		t.Error("expected response metadata to be cloned")
-	}
-
-	if !reflect.DeepEqual(
-		grpcSummary.GRPC.Response.Message,
-		[]byte{4, 5, 6},
-	) {
-		t.Error("expected response message to be cloned")
 	}
 }

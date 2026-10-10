@@ -29,7 +29,9 @@ func (e *Evaluator) EvaluateResponse(
 	expect *model.HTTPExpectSpec,
 	result *execute.TestExecutionResult,
 ) error {
-	result.Summary.Response.HTTP = &model.TestExecutionHTTPResponseSummary{StatusCode: resp.StatusCode}
+	result.Summary.Response = &model.TestExecutionResponseSummary{
+		HTTP: &model.TestExecutionHTTPResponseSummary{StatusCode: resp.StatusCode},
+	}
 
 	if resp.StatusCode != expect.Status {
 		result.Summary.Deviations = append(
