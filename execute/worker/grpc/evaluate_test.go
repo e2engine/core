@@ -31,7 +31,7 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 		header  metadata.MD
 		trailer metadata.MD
 		message map[string]any
-		expect  model.GRPCExpectSpec
+		expect  model.GRPCResponse
 
 		expectedStatus     string
 		expectedMetadata   map[string][]string
@@ -41,27 +41,129 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 		{
 			name: "matching response",
 			header: metadata.MD{
-				"x-header": {"header-value"},
+				"x-header": {
+					"header-value",
+				},
+				"x-ignored": {
+					"ignored-value",
+				},
 			},
 			trailer: metadata.MD{
-				"x-trailer": {"trailer-value"},
+				"x-trailer": {
+					"trailer-value",
+				},
 			},
 			message: map[string]any{
 				"name": "actual",
 			},
-			expect: model.GRPCExpectSpec{
+			expect: model.GRPCResponse{
 				Status: "OK",
+				Metadata: map[string][]string{
+					"x-header": {
+						"header-value",
+					},
+					"x-trailer": {
+						"trailer-value",
+					},
+				},
 				Message: map[string]any{
 					"name": "actual",
 				},
 			},
 			expectedStatus: "OK",
 			expectedMetadata: map[string][]string{
-				"x-header":  {"header-value"},
-				"x-trailer": {"trailer-value"},
+				"x-header": {
+					"header-value",
+				},
+				"x-trailer": {
+					"trailer-value",
+				},
 			},
 			expectedMessage: map[string]any{
 				"name": "actual",
+			},
+		},
+		{
+			name: "unrelated metadata is not persisted",
+			header: metadata.MD{
+				"x-header": {
+					"header-value",
+				},
+			},
+			trailer: metadata.MD{
+				"x-trailer": {
+					"trailer-value",
+				},
+			},
+			message: map[string]any{
+				"name": "actual",
+			},
+			expect: model.GRPCResponse{
+				Status: "OK",
+			},
+			expectedStatus: "OK",
+			expectedMessage: map[string]any{
+				"name": "actual",
+			},
+		},
+		{
+			name: "metadata mismatch",
+			header: metadata.MD{
+				"x-header": {
+					"actual",
+				},
+			},
+			message: map[string]any{
+				"name": "actual",
+			},
+			expect: model.GRPCResponse{
+				Status: "OK",
+				Metadata: map[string][]string{
+					"x-header": {
+						"expected",
+					},
+				},
+			},
+			expectedStatus: "OK",
+			expectedMetadata: map[string][]string{
+				"x-header": {
+					"actual",
+				},
+			},
+			expectedMessage: map[string]any{
+				"name": "actual",
+			},
+			expectedDeviations: []model.TestExecutionDeviation{
+				{
+					Field:    "metadata.x-header",
+					Expected: "expected",
+					Actual:   "actual",
+				},
+			},
+		},
+		{
+			name: "expected metadata missing",
+			message: map[string]any{
+				"name": "actual",
+			},
+			expect: model.GRPCResponse{
+				Status: "OK",
+				Metadata: map[string][]string{
+					"x-header": {
+						"expected",
+					},
+				},
+			},
+			expectedStatus: "OK",
+			expectedMessage: map[string]any{
+				"name": "actual",
+			},
+			expectedDeviations: []model.TestExecutionDeviation{
+				{
+					Field:    "metadata.x-header",
+					Expected: "expected",
+					Actual:   "",
+				},
 			},
 		},
 		{
@@ -73,11 +175,10 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			message: map[string]any{
 				"name": "actual",
 			},
-			expect: model.GRPCExpectSpec{
+			expect: model.GRPCResponse{
 				Status: "OK",
 			},
-			expectedStatus:   "NotFound",
-			expectedMetadata: map[string][]string{},
+			expectedStatus: "NotFound",
 			expectedMessage: map[string]any{
 				"name": "actual",
 			},
@@ -94,14 +195,13 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			message: map[string]any{
 				"name": "actual",
 			},
-			expect: model.GRPCExpectSpec{
+			expect: model.GRPCResponse{
 				Status: "OK",
 				Message: map[string]any{
 					"name": "expected",
 				},
 			},
-			expectedStatus:   "OK",
-			expectedMetadata: map[string][]string{},
+			expectedStatus: "OK",
 			expectedMessage: map[string]any{
 				"name": "actual",
 			},
@@ -118,11 +218,10 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			message: map[string]any{
 				"name": "actual",
 			},
-			expect: model.GRPCExpectSpec{
+			expect: model.GRPCResponse{
 				Status: "OK",
 			},
-			expectedStatus:   "OK",
-			expectedMetadata: map[string][]string{},
+			expectedStatus: "OK",
 			expectedMessage: map[string]any{
 				"name": "actual",
 			},
@@ -160,7 +259,9 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 
 			actual := result.Summary.Response.GRPC
 			if actual == nil {
-				t.Fatal("expected gRPC response summary")
+				t.Fatal(
+					"expected gRPC response summary",
+				)
 			}
 
 			if actual.Status != tt.expectedStatus {
@@ -225,7 +326,7 @@ func TestEvaluatorEvaluateResponseCancelledContext(
 		),
 		nil,
 		nil,
-		&model.GRPCExpectSpec{
+		&model.GRPCResponse{
 			Status: "OK",
 		},
 		result,
@@ -257,7 +358,7 @@ func TestEvaluatorEvaluateResponseUnknownStatus(
 		),
 		nil,
 		nil,
-		&model.GRPCExpectSpec{
+		&model.GRPCResponse{
 			Status: "invalid",
 		},
 		result,
@@ -311,9 +412,12 @@ func TestEvaluatorMatches(t *testing.T) {
 		ServiceID: "service-1",
 		GRPC: &call.GRPCCall{
 			Request: call.GRPCRequest{
-				RPC: "/users.UserService/Create",
+				Service: "users.UserService",
+				Method:  "Create",
 				Metadata: map[string][]string{
-					"x-request-id": {"request-1"},
+					"x-request-id": {
+						"request-1",
+					},
 				},
 				Message: messageBytes,
 			},
@@ -324,20 +428,22 @@ func TestEvaluatorMatches(t *testing.T) {
 		name string
 
 		actual   call.Call
-		expected model.CallExpectation
+		expected model.ServiceExpectedCalls
 
 		match bool
 	}{
 		{
 			name:   "matches",
 			actual: actual,
-			expected: model.CallExpectation{
+			expected: model.ServiceExpectedCalls{
 				ServiceID: "service-1",
-				GRPC: &model.GRPCCallExpectation{
+				GRPC: &model.GRPCRequestPattern{
 					Service: "users.UserService",
 					Method:  "Create",
 					Metadata: map[string][]string{
-						"x-request-id": {"request-1"},
+						"x-request-id": {
+							"request-1",
+						},
 					},
 					Message: map[string]any{
 						"name": "Yaroslav",
@@ -349,9 +455,9 @@ func TestEvaluatorMatches(t *testing.T) {
 		{
 			name:   "different service",
 			actual: actual,
-			expected: model.CallExpectation{
+			expected: model.ServiceExpectedCalls{
 				ServiceID: "service-2",
-				GRPC: &model.GRPCCallExpectation{
+				GRPC: &model.GRPCRequestPattern{
 					Service: "users.UserService",
 					Method:  "Create",
 				},
@@ -362,9 +468,9 @@ func TestEvaluatorMatches(t *testing.T) {
 			actual: call.Call{
 				ServiceID: "service-1",
 			},
-			expected: model.CallExpectation{
+			expected: model.ServiceExpectedCalls{
 				ServiceID: "service-1",
-				GRPC: &model.GRPCCallExpectation{
+				GRPC: &model.GRPCRequestPattern{
 					Service: "users.UserService",
 					Method:  "Create",
 				},
@@ -373,16 +479,16 @@ func TestEvaluatorMatches(t *testing.T) {
 		{
 			name:   "expectation is not gRPC",
 			actual: actual,
-			expected: model.CallExpectation{
+			expected: model.ServiceExpectedCalls{
 				ServiceID: "service-1",
 			},
 		},
 		{
 			name:   "RPC mismatch",
 			actual: actual,
-			expected: model.CallExpectation{
+			expected: model.ServiceExpectedCalls{
 				ServiceID: "service-1",
-				GRPC: &model.GRPCCallExpectation{
+				GRPC: &model.GRPCRequestPattern{
 					Service: "users.UserService",
 					Method:  "Get",
 				},
@@ -391,13 +497,15 @@ func TestEvaluatorMatches(t *testing.T) {
 		{
 			name:   "metadata missing",
 			actual: actual,
-			expected: model.CallExpectation{
+			expected: model.ServiceExpectedCalls{
 				ServiceID: "service-1",
-				GRPC: &model.GRPCCallExpectation{
+				GRPC: &model.GRPCRequestPattern{
 					Service: "users.UserService",
 					Method:  "Create",
 					Metadata: map[string][]string{
-						"x-missing": {"value"},
+						"x-missing": {
+							"value",
+						},
 					},
 				},
 			},
@@ -405,13 +513,15 @@ func TestEvaluatorMatches(t *testing.T) {
 		{
 			name:   "metadata mismatch",
 			actual: actual,
-			expected: model.CallExpectation{
+			expected: model.ServiceExpectedCalls{
 				ServiceID: "service-1",
-				GRPC: &model.GRPCCallExpectation{
+				GRPC: &model.GRPCRequestPattern{
 					Service: "users.UserService",
 					Method:  "Create",
 					Metadata: map[string][]string{
-						"x-request-id": {"different"},
+						"x-request-id": {
+							"different",
+						},
 					},
 				},
 			},
@@ -419,9 +529,9 @@ func TestEvaluatorMatches(t *testing.T) {
 		{
 			name:   "message mismatch",
 			actual: actual,
-			expected: model.CallExpectation{
+			expected: model.ServiceExpectedCalls{
 				ServiceID: "service-1",
-				GRPC: &model.GRPCCallExpectation{
+				GRPC: &model.GRPCRequestPattern{
 					Service: "users.UserService",
 					Method:  "Create",
 					Message: map[string]any{
@@ -433,9 +543,9 @@ func TestEvaluatorMatches(t *testing.T) {
 		{
 			name:   "no message expectation",
 			actual: actual,
-			expected: model.CallExpectation{
+			expected: model.ServiceExpectedCalls{
 				ServiceID: "service-1",
-				GRPC: &model.GRPCCallExpectation{
+				GRPC: &model.GRPCRequestPattern{
 					Service: "users.UserService",
 					Method:  "Create",
 				},
@@ -480,14 +590,15 @@ func TestEvaluatorMatchesMissingMethod(
 		ServiceID: "service-1",
 		GRPC: &call.GRPCCall{
 			Request: call.GRPCRequest{
-				RPC: "/users.UserService/Missing",
+				Service: "users.UserService",
+				Method:  "Missing",
 			},
 		},
 	}
 
-	expected := model.CallExpectation{
+	expected := model.ServiceExpectedCalls{
 		ServiceID: "service-1",
-		GRPC: &model.GRPCCallExpectation{
+		GRPC: &model.GRPCRequestPattern{
 			Service: "users.UserService",
 			Method:  "Missing",
 			Message: map[string]any{
@@ -522,15 +633,16 @@ func TestEvaluatorMatchesInvalidCapturedMessage(
 		ServiceID: "service-1",
 		GRPC: &call.GRPCCall{
 			Request: call.GRPCRequest{
-				RPC:     "/users.UserService/Create",
+				Service: "users.UserService",
+				Method:  "Create",
 				Message: []byte{0xff},
 			},
 		},
 	}
 
-	expected := model.CallExpectation{
+	expected := model.ServiceExpectedCalls{
 		ServiceID: "service-1",
-		GRPC: &model.GRPCCallExpectation{
+		GRPC: &model.GRPCRequestPattern{
 			Service: "users.UserService",
 			Method:  "Create",
 			Message: map[string]any{
@@ -580,7 +692,8 @@ func TestEvaluatorDeviation(t *testing.T) {
 				ServiceID: "service-1",
 				GRPC: &call.GRPCCall{
 					Request: call.GRPCRequest{
-						RPC: "/users.UserService/Create",
+						Service: "users.UserService",
+						Method:  "Create",
 					},
 					Response: call.GRPCResponse{
 						Metadata: map[string][]string{},
@@ -594,7 +707,8 @@ func TestEvaluatorDeviation(t *testing.T) {
 				ServiceID: "service-1",
 				GRPC: &call.GRPCCall{
 					Request: call.GRPCRequest{
-						RPC: "/users.UserService/Create",
+						Service: "users.UserService",
+						Method:  "Create",
 					},
 					Response: call.GRPCResponse{
 						Metadata: map[string][]string{
@@ -614,7 +728,8 @@ func TestEvaluatorDeviation(t *testing.T) {
 				ServiceID: "service-1",
 				GRPC: &call.GRPCCall{
 					Request: call.GRPCRequest{
-						RPC: "/users.UserService/Create",
+						Service: "users.UserService",
+						Method:  "Create",
 					},
 					Response: call.GRPCResponse{
 						Metadata: map[string][]string{
@@ -703,13 +818,21 @@ func TestMessageToMap(t *testing.T) {
 
 func TestMergeMetadata(t *testing.T) {
 	header := metadata.MD{
-		"x-header": {"one"},
-		"x-shared": {"header"},
+		"x-header": {
+			"one",
+		},
+		"x-shared": {
+			"header",
+		},
 	}
 
 	trailer := metadata.MD{
-		"x-trailer": {"two"},
-		"x-shared":  {"trailer"},
+		"x-trailer": {
+			"two",
+		},
+		"x-shared": {
+			"trailer",
+		},
 	}
 
 	actual := mergeMetadata(
@@ -718,9 +841,16 @@ func TestMergeMetadata(t *testing.T) {
 	)
 
 	expected := map[string][]string{
-		"x-header":  {"one"},
-		"x-trailer": {"two"},
-		"x-shared":  {"header", "trailer"},
+		"x-header": {
+			"one",
+		},
+		"x-trailer": {
+			"two",
+		},
+		"x-shared": {
+			"header",
+			"trailer",
+		},
 	}
 
 	if !reflect.DeepEqual(

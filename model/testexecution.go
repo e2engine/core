@@ -43,8 +43,8 @@ type TestExecutionSummary struct {
 	// Response captures what we observed.
 	Response *TestExecutionResponseSummary `json:"response,omitempty" yaml:"response,omitempty"`
 
-	// ExpectedCalls captures the service call expectations that were evaluated.
-	ExpectedCalls []TestExecutionCallExpectationSummary `json:"expected_calls,omitempty" yaml:"expected_calls,omitempty"`
+	// Calls captures the actual service calls.
+	Calls []ServiceObservedCalls `json:"calls,omitempty" yaml:"calls,omitempty"`
 
 	// Deviations contains assertion failures.
 	// When empty and Error is empty, Status is typically "passed".
@@ -52,67 +52,43 @@ type TestExecutionSummary struct {
 }
 
 type TestExecutionRequestSummary struct {
-	HTTP *TestExecutionHTTPRequestSummary `json:"http,omitempty" yaml:"http,omitempty"`
-	GRPC *TestExecutionGRPCRequestSummary `json:"grpc,omitempty" yaml:"grpc,omitempty"`
+	HTTP *HTTPRequest `json:"http,omitempty" yaml:"http,omitempty"`
+	GRPC *GRPCRequest `json:"grpc,omitempty" yaml:"grpc,omitempty"`
 }
 
 type TestExecutionResponseSummary struct {
-	HTTP *TestExecutionHTTPResponseSummary `json:"http,omitempty" yaml:"http,omitempty"`
-	GRPC *TestExecutionGRPCResponseSummary `json:"grpc,omitempty" yaml:"grpc,omitempty"`
+	HTTP *HTTPResponse `json:"http,omitempty" yaml:"http,omitempty"`
+	GRPC *GRPCResponse `json:"grpc,omitempty" yaml:"grpc,omitempty"`
 }
 
-type TestExecutionHTTPRequestSummary struct {
-	Method   string              `json:"method,omitempty" yaml:"method,omitempty"`
-	URL      string              `json:"url,omitempty" yaml:"url,omitempty"`
-	Headers  map[string][]string `json:"headers,omitempty" yaml:"headers,omitempty"`
-	BodyJSON string              `json:"body_json,omitempty" yaml:"body_json,omitempty"`
-}
-
-type TestExecutionGRPCRequestSummary struct {
-	Service  string              `json:"service,omitempty" yaml:"service,omitempty"`
-	Method   string              `json:"method,omitempty" yaml:"method,omitempty"`
-	Metadata map[string][]string `json:"metadata,omitempty" yaml:"metadata,omitempty"`
-	Message  map[string]any      `json:"message,omitempty" yaml:"message,omitempty"`
-}
-
-type TestExecutionHTTPResponseSummary struct {
-	StatusCode int                 `json:"status_code,omitempty" yaml:"status_code,omitempty"`
-	Headers    map[string][]string `json:"headers,omitempty" yaml:"headers,omitempty"`
-	BodyJSON   string              `json:"body_json,omitempty" yaml:"body_json,omitempty"`
-	BodyText   string              `json:"body_text,omitempty" yaml:"body_text,omitempty"`
-}
-
-type TestExecutionGRPCResponseSummary struct {
-	Status   string              `json:"status,omitempty" yaml:"status,omitempty"`
-	Metadata map[string][]string `json:"metadata,omitempty" yaml:"metadata,omitempty"`
-	Message  map[string]any      `json:"message,omitempty" yaml:"message,omitempty"`
-}
-
-type TestExecutionGRPCCallExpectationSummary struct {
-	Service  string              `json:"service,omitempty" yaml:"service,omitempty"`
-	Method   string              `json:"method,omitempty" yaml:"method,omitempty"`
-	Metadata map[string][]string `json:"metadata,omitempty" yaml:"metadata,omitempty"`
-	Message  map[string]any      `json:"message,omitempty" yaml:"message,omitempty"`
-}
-
-type TestExecutionCallExpectationSummary struct {
+// ServiceObservedCalls is an aggregated, diagnostic view of calls observed
+// for a service during test execution. Calls are grouped by request identity
+// and response status so dependency outcomes are visible without exposing raw
+// request or response data. Response status is diagnostic only and does not
+// participate in expected-call assertions, which verify the SUT's outgoing
+// requests and call counts independently of dependency behavior.
+type ServiceObservedCalls struct {
 	ServiceID string `json:"service_id" yaml:"service_id"`
-	Count     *int   `json:"count,omitempty" yaml:"count,omitempty"`
+	Count     int    `json:"count" yaml:"count"`
 
-	HTTP *TestExecutionHTTPCallExpectationSummary `json:"http,omitempty" yaml:"http,omitempty"`
-	GRPC *TestExecutionGRPCCallExpectationSummary `json:"grpc,omitempty" yaml:"grpc,omitempty"`
+	HTTP *HTTPServiceObservedCall `json:"http,omitempty" yaml:"http,omitempty"`
+	GRPC *GRPCServiceObservedCall `json:"grpc,omitempty" yaml:"grpc,omitempty"`
 }
 
-type TestExecutionHTTPCallExpectationSummary struct {
-	Method   string              `json:"method,omitempty" yaml:"method,omitempty"`
-	Path     string              `json:"path,omitempty" yaml:"path,omitempty"`
-	Query    map[string][]string `json:"query,omitempty" yaml:"query,omitempty"`
-	Headers  map[string][]string `json:"headers,omitempty" yaml:"headers,omitempty"`
-	BodyJSON string              `json:"body_json,omitempty" yaml:"body_json,omitempty"`
+type HTTPServiceObservedCall struct {
+	Method             string `json:"method,omitempty" yaml:"method,omitempty"`
+	Path               string `json:"path,omitempty" yaml:"path,omitempty"`
+	ResponseStatusCode *int   `json:"response_status_code,omitempty" yaml:"response_status_code,omitempty"`
+}
+
+type GRPCServiceObservedCall struct {
+	Service        string `json:"service,omitempty" yaml:"service,omitempty"`
+	Method         string `json:"method,omitempty" yaml:"method,omitempty"`
+	ResponseStatus string `json:"response_status,omitempty" yaml:"response_status,omitempty"`
 }
 
 type TestExecutionDeviation struct {
-	Field    string `json:"field" yaml:"field"` // e.g. "status_code", "body_json"
+	Field    string `json:"field" yaml:"field"` // e.g. "status_code", "body"
 	Expected string `json:"expected,omitempty" yaml:"expected,omitempty"`
 	Actual   string `json:"actual,omitempty" yaml:"actual,omitempty"`
 	Message  string `json:"message,omitempty" yaml:"message,omitempty"`

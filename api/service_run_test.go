@@ -714,14 +714,14 @@ func validTestSpec() model.TestSpec {
 	return model.TestSpec{
 		Tags: []string{"smoke"},
 		Request: model.RequestSpec{
-			HTTP: &model.HTTPRequestSpec{
+			HTTP: &model.HTTPRequest{
 				Method: "GET",
 				URL:    "http://localhost:8080/health",
 			},
 		},
 		Expect: model.ExpectSpec{
-			HTTP: &model.HTTPExpectSpec{
-				Status: 200,
+			HTTP: &model.HTTPResponse{
+				StatusCode: 200,
 			},
 		},
 	}

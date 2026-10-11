@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/ygrebnov/errorc"
 	"google.golang.org/grpc/codes"
@@ -46,7 +47,7 @@ func (e *Evaluator) EvaluateResponse(
 	response *dynamicpb.Message,
 	header metadata.MD,
 	trailer metadata.MD,
-	expect *model.GRPCExpectSpec,
+	expect *model.GRPCResponse,
 	result *execute.TestExecutionResult,
 ) error {
 	if err := ctx.Err(); err != nil {
@@ -54,7 +55,7 @@ func (e *Evaluator) EvaluateResponse(
 	}
 
 	result.Summary.Response = &model.TestExecutionResponseSummary{
-		GRPC: &model.TestExecutionGRPCResponseSummary{},
+		GRPC: &model.GRPCResponse{},
 	}
 
 	actualStatus := status.Code(callErr)
@@ -62,8 +63,10 @@ func (e *Evaluator) EvaluateResponse(
 	result.Summary.Response.GRPC.Status =
 		actualStatus.String()
 
+	actualMetadata := mergeMetadata(header, trailer)
+
 	result.Summary.Response.GRPC.Metadata =
-		mergeMetadata(header, trailer)
+		selectMetadata(actualMetadata, expect.Metadata)
 
 	expectedStatus, err := grpcCode(
 		expect.Status,
@@ -79,6 +82,25 @@ func (e *Evaluator) EvaluateResponse(
 				Field:    "status",
 				Expected: expectedStatus.String(),
 				Actual:   actualStatus.String(),
+			},
+		)
+	}
+
+	for key, expectedValues := range expect.Metadata {
+		actualValues, ok := actualMetadata[key]
+		if ok && util.IsStringSlicesEqual(
+			actualValues,
+			expectedValues,
+		) {
+			continue
+		}
+
+		result.Summary.Deviations = append(
+			result.Summary.Deviations,
+			model.TestExecutionDeviation{
+				Field:    "metadata." + key,
+				Expected: strings.Join(expectedValues, ","),
+				Actual:   strings.Join(actualValues, ","),
 			},
 		)
 	}
@@ -139,11 +161,37 @@ func (e *Evaluator) EvaluateResponse(
 	return nil
 }
 
+func selectMetadata(
+	actual map[string][]string,
+	expected map[string][]string,
+) map[string][]string {
+	if len(expected) == 0 {
+		return nil
+	}
+
+	result := make(
+		map[string][]string,
+		len(expected),
+	)
+
+	for key := range expected {
+		if values, ok := actual[key]; ok {
+			result[key] = util.CloneStringSlice(values)
+		}
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+
+	return result
+}
+
 func (e *Evaluator) Matches(
 	ctx context.Context,
 	service *model.ServiceSpec,
 	actual call.Call,
-	expected model.CallExpectation,
+	expected model.ServiceExpectedCalls,
 ) (bool, error) {
 	if actual.ServiceID != expected.ServiceID {
 		return false, nil
@@ -154,13 +202,8 @@ func (e *Evaluator) Matches(
 		return false, nil
 	}
 
-	expectedRPC :=
-		"/" +
-			expected.GRPC.Service +
-			"/" +
-			expected.GRPC.Method
-
-	if actual.GRPC.Request.RPC != expectedRPC {
+	if actual.GRPC.Request.Service != expected.GRPC.Service ||
+		actual.GRPC.Request.Method != expected.GRPC.Method {
 		return false, nil
 	}
 
@@ -237,9 +280,14 @@ func (e *Evaluator) Deviation(
 		return nil
 	}
 
+	actualRPC := "/" +
+		actual.GRPC.Request.Service +
+		"/" +
+		actual.GRPC.Request.Method
+
 	return &model.TestExecutionDeviation{
 		Field:  "calls." + service.ID,
-		Actual: actual.GRPC.Request.RPC,
+		Actual: actualRPC,
 		Message: "mocked service received a request " +
 			"that did not match any fixture",
 	}

@@ -44,11 +44,14 @@ type MethodResolver interface {
 }
 
 type Fixture struct {
-	rpc     string
-	message map[string]any
+	service  string
+	method   string
+	metadata map[string][]string
+	message  map[string]any
 
-	status   codes.Code
-	response map[string]any
+	status           codes.Code
+	responseMetadata map[string][]string
+	response         map[string]any
 }
 
 func NewMockGRPCService(
@@ -58,9 +61,18 @@ func NewMockGRPCService(
 ) *MockGRPCService {
 	return &MockGRPCService{
 		logger: logger.With(
-			log.String(keys.EnvironmentServiceID, spec.ID),
-			log.String(keys.EnvironmentServiceKind, string(spec.Kind)),
-			log.String(keys.EnvironmentServiceMode, string(spec.Mode)),
+			log.String(
+				keys.EnvironmentServiceID,
+				spec.ID,
+			),
+			log.String(
+				keys.EnvironmentServiceKind,
+				string(spec.Kind),
+			),
+			log.String(
+				keys.EnvironmentServiceMode,
+				string(spec.Mode),
+			),
 		),
 		spec:     spec,
 		fixtures: compileFixtures(spec.Fixtures),
@@ -68,7 +80,9 @@ func NewMockGRPCService(
 	}
 }
 
-func (s *MockGRPCService) Mount(ctx context.Context) error {
+func (s *MockGRPCService) Mount(
+	ctx context.Context,
+) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -93,7 +107,10 @@ func (s *MockGRPCService) Mount(ctx context.Context) error {
 	go func() {
 		err := s.server.Serve(listener)
 		if err != nil &&
-			!nativeerrors.Is(err, ggrpc.ErrServerStopped) {
+			!nativeerrors.Is(
+				err,
+				ggrpc.ErrServerStopped,
+			) {
 			s.logger.Error(
 				"gRPC mock service stopped unexpectedly",
 				log.Err(keys.Cause, err),
@@ -116,7 +133,9 @@ func (s *MockGRPCService) GetRuntimeAddress() string {
 	return s.runtimeAddress
 }
 
-func (s *MockGRPCService) Unmount(ctx context.Context) error {
+func (s *MockGRPCService) Unmount(
+	ctx context.Context,
+) error {
 	if s.server == nil {
 		return nil
 	}
@@ -142,7 +161,9 @@ func (s *MockGRPCService) handle(
 	_ any,
 	stream ggrpc.ServerStream,
 ) error {
-	fullMethod, ok := ggrpc.MethodFromServerStream(stream)
+	fullMethod, ok := ggrpc.MethodFromServerStream(
+		stream,
+	)
 	if !ok {
 		return status.Error(
 			codes.Internal,
@@ -164,20 +185,32 @@ func (s *MockGRPCService) handle(
 		)
 	}
 
-	if method.IsStreamingClient() || method.IsStreamingServer() {
+	if method.IsStreamingClient() ||
+		method.IsStreamingServer() {
 		return status.Error(
 			codes.Unimplemented,
 			"streaming RPCs are not supported",
 		)
 	}
 
-	request := dynamicpb.NewMessage(method.Input())
+	request := dynamicpb.NewMessage(
+		method.Input(),
+	)
 
 	if errRecv := stream.RecvMsg(request); errRecv != nil {
 		return errRecv
 	}
 
-	fixture, err := s.match(fullMethod, request, method)
+	incomingMetadata, _ := metadata.FromIncomingContext(
+		stream.Context(),
+	)
+
+	fixture, err := s.match(
+		fullMethod,
+		request,
+		incomingMetadata,
+		method,
+	)
 	if err != nil {
 		return status.Error(
 			codes.Internal,
@@ -192,16 +225,28 @@ func (s *MockGRPCService) handle(
 		)
 
 		stream.SetTrailer(
-			metadata.Pairs(
-				string(keys.E2EngineMockMissMetadata),
-				"true",
-			),
+			metadata.Pairs(string(keys.E2EngineMockMissMetadata), "true"),
 		)
 
 		return status.Error(
 			codes.Unimplemented,
 			"no fixture matched",
 		)
+	}
+
+	if len(fixture.responseMetadata) > 0 {
+		responseMetadata := metadata.MD{}
+
+		for key, values := range fixture.responseMetadata {
+			responseMetadata[key] = append(
+				[]string(nil),
+				values...,
+			)
+		}
+
+		if errSetHeader := stream.SetHeader(responseMetadata); errSetHeader != nil {
+			return errSetHeader
+		}
 	}
 
 	if fixture.status != codes.OK {
@@ -230,7 +275,10 @@ func (s *MockGRPCService) handle(
 }
 
 func methodName(fullMethod string) string {
-	index := strings.LastIndex(fullMethod, "/")
+	index := strings.LastIndex(
+		fullMethod,
+		"/",
+	)
 	if index == -1 {
 		return fullMethod
 	}
@@ -241,15 +289,29 @@ func methodName(fullMethod string) string {
 func (s *MockGRPCService) match(
 	fullMethod string,
 	actual proto.Message,
+	actualMetadata metadata.MD,
 	method protoreflect.MethodDescriptor,
 ) (*Fixture, error) {
-	rpc := methodName(fullMethod)
+	service, methodName, _ := strings.Cut(
+		strings.TrimPrefix(
+			fullMethod,
+			"/",
+		),
+		"/",
+	)
 
 	for i := range s.fixtures {
 		fixture := &s.fixtures[i]
 
-		if fixture.rpc != rpc &&
-			fixture.rpc != fullMethod {
+		if fixture.service != service ||
+			fixture.method != methodName {
+			continue
+		}
+
+		if !areMetadataEqual(
+			fixture.metadata,
+			actualMetadata,
+		) {
 			continue
 		}
 
@@ -268,11 +330,17 @@ func (s *MockGRPCService) match(
 					keys.Operation,
 					"build fixture request message",
 				),
-				errorc.Error(keys.Cause, err),
+				errorc.Error(
+					keys.Cause,
+					err,
+				),
 			)
 		}
 
-		if proto.Equal(expected, actual) {
+		if proto.Equal(
+			expected,
+			actual,
+		) {
 			return fixture, nil
 		}
 	}
@@ -280,11 +348,46 @@ func (s *MockGRPCService) match(
 	return nil, nil
 }
 
+func areMetadataEqual(
+	expected map[string][]string,
+	actual metadata.MD,
+) bool {
+	for key, expectedValues := range expected {
+		actualValues := actual.Get(key)
+
+		if len(expectedValues) !=
+			len(actualValues) {
+			return false
+		}
+
+		expectedCounts := make(
+			map[string]int,
+			len(expectedValues),
+		)
+
+		for _, value := range expectedValues {
+			expectedCounts[value]++
+		}
+
+		for _, value := range actualValues {
+			if expectedCounts[value] == 0 {
+				return false
+			}
+
+			expectedCounts[value]--
+		}
+	}
+
+	return true
+}
+
 func buildMessage(
 	descriptor protoreflect.MessageDescriptor,
 	value map[string]any,
 ) (*dynamicpb.Message, error) {
-	message := dynamicpb.NewMessage(descriptor)
+	message := dynamicpb.NewMessage(
+		descriptor,
+	)
 
 	if len(value) == 0 {
 		return message, nil
@@ -298,18 +401,27 @@ func buildMessage(
 				keys.Operation,
 				"marshal gRPC message value",
 			),
-			errorc.Error(keys.Cause, err),
+			errorc.Error(
+				keys.Cause,
+				err,
+			),
 		)
 	}
 
-	if err := protojson.Unmarshal(data, message); err != nil {
+	if err := protojson.Unmarshal(
+		data,
+		message,
+	); err != nil {
 		return nil, errorc.With(
 			errors.ErrCannotBuildGRPCMessage,
 			errorc.String(
 				keys.Operation,
 				"unmarshal gRPC message",
 			),
-			errorc.Error(keys.Cause, err),
+			errorc.Error(
+				keys.Cause,
+				err,
+			),
 		)
 	}
 
@@ -319,7 +431,11 @@ func buildMessage(
 func compileFixtures(
 	specs []model.FixtureSpec,
 ) []Fixture {
-	fixtures := make([]Fixture, 0, len(specs))
+	fixtures := make(
+		[]Fixture,
+		0,
+		len(specs),
+	)
 
 	for i := range specs {
 		spec := &specs[i]
@@ -332,10 +448,16 @@ func compileFixtures(
 		fixtures = append(
 			fixtures,
 			Fixture{
-				rpc:      spec.When.GRPC.Method,
+				service:  spec.When.GRPC.Service,
+				method:   spec.When.GRPC.Method,
+				metadata: spec.When.GRPC.Metadata,
 				message:  spec.When.GRPC.Message,
-				status:   grpcCode(spec.Then.GRPC.Status),
-				response: spec.Then.GRPC.Message,
+
+				status: grpcCode(
+					spec.Then.GRPC.Status,
+				),
+				responseMetadata: spec.Then.GRPC.Metadata,
+				response:         spec.Then.GRPC.Message,
 			},
 		)
 	}

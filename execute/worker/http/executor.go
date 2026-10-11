@@ -64,13 +64,15 @@ func (e *TestExecutor) Execute(
 
 func buildHTTPRequest(
 	ctx context.Context,
-	spec *model.HTTPRequestSpec,
+	spec *model.HTTPRequest,
 	testExecutionID string,
 ) (*http.Request, error) {
 	var body io.Reader
 
 	if spec.Body != "" {
 		body = bytes.NewReader([]byte(spec.Body))
+	} else if spec.BodyJSON != "" {
+		body = bytes.NewReader([]byte(spec.BodyJSON))
 	}
 
 	req, err := http.NewRequestWithContext(
@@ -84,9 +86,12 @@ func buildHTTPRequest(
 	}
 
 	query := req.URL.Query()
-	for key, value := range spec.Query {
-		query.Set(key, value)
+	for key, values := range spec.Query {
+		for _, value := range values {
+			query.Add(key, value)
+		}
 	}
+
 	req.URL.RawQuery = query.Encode()
 
 	for key, values := range spec.Headers {
@@ -97,7 +102,7 @@ func buildHTTPRequest(
 
 	req.Header = e2enginehttp.WithTestExecutionID(req.Header, testExecutionID)
 
-	if spec.Body != "" &&
+	if spec.BodyJSON != "" &&
 		req.Header.Get("Content-Type") == "" {
 		req.Header.Set(
 			"Content-Type",

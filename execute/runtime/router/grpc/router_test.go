@@ -352,10 +352,17 @@ func TestRouter(t *testing.T) {
 		t.Fatal("expected gRPC call")
 	}
 
-	if got.GRPC.Request.RPC != "/test.Service/Method" {
+	if got.GRPC.Request.Service != "test.Service" {
 		t.Errorf(
-			"unexpected RPC %s",
-			got.GRPC.Request.RPC,
+			"unexpected service %s",
+			got.GRPC.Request.Service,
+		)
+	}
+
+	if got.GRPC.Request.Method != "Method" {
+		t.Errorf(
+			"unexpected method %s",
+			got.GRPC.Request.Method,
 		)
 	}
 
@@ -685,4 +692,88 @@ func newTestGRPCRouter(
 		logger,
 		store,
 	)
+}
+
+func TestSplitFullMethod(t *testing.T) {
+	tests := []struct {
+		name string
+
+		fullMethod string
+
+		expectedService string
+		expectedMethod  string
+	}{
+		{
+			name:            "canonical full method",
+			fullMethod:      "/users.UserService/Create",
+			expectedService: "users.UserService",
+			expectedMethod:  "Create",
+		},
+		{
+			name:            "without leading slash",
+			fullMethod:      "users.UserService/Create",
+			expectedService: "users.UserService",
+			expectedMethod:  "Create",
+		},
+		{
+			name:            "service without package",
+			fullMethod:      "/UserService/Create",
+			expectedService: "UserService",
+			expectedMethod:  "Create",
+		},
+		{
+			name:            "empty method",
+			fullMethod:      "/users.UserService/",
+			expectedService: "users.UserService",
+			expectedMethod:  "",
+		},
+		{
+			name:            "service only",
+			fullMethod:      "/users.UserService",
+			expectedService: "users.UserService",
+			expectedMethod:  "",
+		},
+		{
+			name:            "empty",
+			fullMethod:      "",
+			expectedService: "",
+			expectedMethod:  "",
+		},
+		{
+			name:            "slash only",
+			fullMethod:      "/",
+			expectedService: "",
+			expectedMethod:  "",
+		},
+		{
+			name:            "additional slash remains in method",
+			fullMethod:      "/users.UserService/Create/extra",
+			expectedService: "users.UserService",
+			expectedMethod:  "Create/extra",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service, method := splitFullMethod(
+				tt.fullMethod,
+			)
+
+			if service != tt.expectedService {
+				t.Errorf(
+					"expected service %q, got %q",
+					tt.expectedService,
+					service,
+				)
+			}
+
+			if method != tt.expectedMethod {
+				t.Errorf(
+					"expected method %q, got %q",
+					tt.expectedMethod,
+					method,
+				)
+			}
+		})
+	}
 }

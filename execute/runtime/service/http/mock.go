@@ -139,35 +139,56 @@ func (s *MockHTTPService) match(r *http.Request) (*Fixture, error) {
 		)
 	}
 
-	for _, fixture := range s.fixtures {
-		if fixture.method == r.Method &&
-			fixture.path == r.URL.Path &&
-			areQueryParamsEqual(fixture.query, r.URL.Query()) &&
-			areHeadersEqual(fixture.headers, r.Header) &&
-			isBodyEqual(fixture.body, body) {
-			return &fixture, nil
+	for i := range s.fixtures {
+		if s.fixtures[i].method == r.Method &&
+			s.fixtures[i].path == r.URL.Path &&
+			areQueryParamsEqual(s.fixtures[i].query, r.URL.Query()) &&
+			areHeadersEqual(s.fixtures[i].headers, r.Header) &&
+			isBodyEqual(
+				s.fixtures[i].body,
+				s.fixtures[i].bodyJSON,
+				body,
+			) {
+			return &s.fixtures[i], nil
 		}
 	}
 
 	return nil, nil
 }
 
-func isBodyEqual(expected, actual []byte) bool {
-	if len(expected) == 0 || len(actual) == 0 {
-		return len(expected) == len(actual)
+func isBodyEqual(
+	expectedBody string,
+	expectedBodyJSON string,
+	actual []byte,
+) bool {
+	if expectedBody != "" {
+		return expectedBody == string(actual)
 	}
 
-	var expectedValue any
-	if err := json.Unmarshal(expected, &expectedValue); err != nil {
-		return false
+	if expectedBodyJSON != "" {
+		var expectedValue any
+		if err := json.Unmarshal(
+			[]byte(expectedBodyJSON),
+			&expectedValue,
+		); err != nil {
+			return false
+		}
+
+		var actualValue any
+		if err := json.Unmarshal(
+			actual,
+			&actualValue,
+		); err != nil {
+			return false
+		}
+
+		return reflect.DeepEqual(
+			expectedValue,
+			actualValue,
+		)
 	}
 
-	var actualValue any
-	if err := json.Unmarshal(actual, &actualValue); err != nil {
-		return false
-	}
-
-	return reflect.DeepEqual(expectedValue, actualValue)
+	return len(actual) == 0
 }
 
 func areHeadersEqual(expected, actual http.Header) bool {
@@ -197,7 +218,10 @@ func areQueryParamsEqual(
 	return reflect.DeepEqual(expected, actual)
 }
 
-func (s *MockHTTPService) respond(w http.ResponseWriter, fixture *Fixture) {
+func (s *MockHTTPService) respond(
+	w http.ResponseWriter,
+	fixture *Fixture,
+) {
 	for k, values := range fixture.responseHeaders {
 		for _, v := range values {
 			w.Header().Add(k, v)
@@ -205,23 +229,15 @@ func (s *MockHTTPService) respond(w http.ResponseWriter, fixture *Fixture) {
 	}
 
 	var body []byte
-	if len(fixture.responseBody) > 0 {
-		var err error
-		body, err = json.Marshal(fixture.responseBody)
-		if err != nil {
-			s.logger.Error(
-				errors.ErrFailedToMarshalResponseBody.Error(),
-				log.String(keys.RequestMethod, fixture.method),
-				log.String(keys.RequestURLPath, fixture.path),
-				log.Err(keys.Cause, err),
-			)
-			http.Error(
-				w,
-				errors.ErrFailedToMarshalResponseBody.Error(),
-				http.StatusInternalServerError,
-			)
-			return
-		}
+
+	if fixture.responseBody != "" {
+		body = []byte(
+			fixture.responseBody,
+		)
+	} else if fixture.responseBodyJSON != "" {
+		body = []byte(
+			fixture.responseBodyJSON,
+		)
 	}
 
 	w.WriteHeader(fixture.status)
@@ -230,10 +246,17 @@ func (s *MockHTTPService) respond(w http.ResponseWriter, fixture *Fixture) {
 		if _, err := w.Write(body); err != nil {
 			s.logger.Error(
 				errors.ErrFailedToWriteResponseBody.Error(),
-				log.String(keys.RequestMethod, fixture.method),
-				log.String(keys.RequestURLPath, fixture.path),
+				log.String(
+					keys.RequestMethod,
+					fixture.method,
+				),
+				log.String(
+					keys.RequestURLPath,
+					fixture.path,
+				),
 				log.Err(keys.Cause, err),
 			)
+
 			return
 		}
 	}
@@ -244,32 +267,48 @@ type Fixture struct {
 	path    string
 	query   url.Values
 	headers map[string][]string
-	body    json.RawMessage
+
+	body     string
+	bodyJSON string
 
 	status          int
 	responseHeaders map[string][]string
-	responseBody    json.RawMessage
+
+	responseBody     string
+	responseBodyJSON string
 }
 
-func compileFixtures(specs []model.FixtureSpec) []Fixture {
-	fixtures := make([]Fixture, len(specs))
+func compileFixtures(
+	specs []model.FixtureSpec,
+) []Fixture {
+	fixtures := make(
+		[]Fixture,
+		len(specs),
+	)
+
 	for i, spec := range specs {
 		// Path is validated by ServiceSpec.Validate.
-		u, _ := url.ParseRequestURI(spec.When.HTTP.Path)
+		u, _ := url.ParseRequestURI(
+			spec.When.HTTP.Path,
+		)
 
-		fixture := Fixture{
+		fixtures[i] = Fixture{
 			method:  spec.When.HTTP.Method,
 			path:    u.Path,
 			query:   u.Query(),
 			headers: spec.When.HTTP.Headers,
-			body:    json.RawMessage(spec.When.HTTP.Body),
 
-			status:          spec.Then.HTTP.Status,
+			body:     spec.When.HTTP.Body,
+			bodyJSON: spec.When.HTTP.BodyJSON,
+
+			status: spec.Then.HTTP.StatusCode,
+
 			responseHeaders: spec.Then.HTTP.Headers,
-			responseBody:    json.RawMessage(spec.Then.HTTP.Body),
-		}
 
-		fixtures[i] = fixture
+			responseBody:     spec.Then.HTTP.Body,
+			responseBodyJSON: spec.Then.HTTP.BodyJSON,
+		}
 	}
+
 	return fixtures
 }

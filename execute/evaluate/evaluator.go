@@ -16,7 +16,7 @@ type CallEvaluator interface {
 		ctx context.Context,
 		service *model.ServiceSpec,
 		actual call.Call,
-		expected model.CallExpectation,
+		expected model.ServiceExpectedCalls,
 	) (bool, error)
 
 	Deviation(
@@ -43,7 +43,7 @@ func New(
 func (e *Evaluator) EvaluateCalls(
 	ctx context.Context,
 	services []model.ServiceSpec,
-	expectedCalls []model.CallExpectation,
+	expectedCalls []model.ServiceExpectedCalls,
 	calls call.Reader,
 	result *execute.TestExecutionResult,
 ) error {
@@ -107,7 +107,7 @@ func (e *Evaluator) evaluateActualCalls(
 func (e *Evaluator) evaluateExpectedCalls(
 	ctx context.Context,
 	services []model.ServiceSpec,
-	expectedCalls []model.CallExpectation,
+	expectedCalls []model.ServiceExpectedCalls,
 	calls call.Reader,
 	result *execute.TestExecutionResult,
 ) error {
@@ -177,7 +177,7 @@ func (e *Evaluator) matches(
 	ctx context.Context,
 	service *model.ServiceSpec,
 	actual call.Call,
-	expected model.CallExpectation,
+	expected model.ServiceExpectedCalls,
 ) (bool, error) {
 	switch {
 	case expected.HTTP != nil:
