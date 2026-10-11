@@ -25,11 +25,12 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 		expectedMiss   bool
 	}{
 		{
-			name: "method path and body match",
+			name: "JSON object body matches semantically",
 			fixture: newHTTPFixture(
 				"POST",
 				"/users",
 				nil,
+				"",
 				`{"name":"Alice","age":42}`,
 				http.StatusCreated,
 			),
@@ -40,11 +41,12 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			expectedStatus: http.StatusCreated,
 		},
 		{
-			name: "array body",
+			name: "JSON array body",
 			fixture: newHTTPFixture(
 				"POST",
 				"/values",
 				nil,
+				"",
 				`[1,2,3]`,
 				http.StatusOK,
 			),
@@ -55,11 +57,12 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name: "scalar body",
+			name: "JSON scalar body",
 			fixture: newHTTPFixture(
 				"POST",
 				"/value",
 				nil,
+				"",
 				`42`,
 				http.StatusOK,
 			),
@@ -70,11 +73,12 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name: "string body",
+			name: "JSON string body",
 			fixture: newHTTPFixture(
 				"POST",
 				"/value",
 				nil,
+				"",
 				`"hello"`,
 				http.StatusOK,
 			),
@@ -85,11 +89,12 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name: "boolean body",
+			name: "JSON boolean body",
 			fixture: newHTTPFixture(
 				"POST",
 				"/value",
 				nil,
+				"",
 				`true`,
 				http.StatusOK,
 			),
@@ -100,11 +105,12 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
-			name: "null body",
+			name: "JSON null body",
 			fixture: newHTTPFixture(
 				"POST",
 				"/value",
 				nil,
+				"",
 				`null`,
 				http.StatusOK,
 			),
@@ -115,11 +121,61 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			expectedStatus: http.StatusOK,
 		},
 		{
+			name: "exact text body",
+			fixture: newHTTPFixture(
+				"POST",
+				"/text",
+				nil,
+				"hello world",
+				"",
+				http.StatusOK,
+			),
+			method: "POST",
+			path:   "/text",
+			body:   "hello world",
+
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "arbitrary non-JSON text body",
+			fixture: newHTTPFixture(
+				"POST",
+				"/text",
+				nil,
+				"this is not JSON: {",
+				"",
+				http.StatusOK,
+			),
+			method: "POST",
+			path:   "/text",
+			body:   "this is not JSON: {",
+
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "text body uses exact semantics",
+			fixture: newHTTPFixture(
+				"POST",
+				"/users",
+				nil,
+				`{"name":"Alice","age":42}`,
+				"",
+				http.StatusOK,
+			),
+			method: "POST",
+			path:   "/users",
+			body:   `{"age":42,"name":"Alice"}`,
+
+			expectedStatus: http.StatusNotImplemented,
+			expectedMiss:   true,
+		},
+		{
 			name: "empty body",
 			fixture: newHTTPFixture(
 				"GET",
 				"/users",
 				nil,
+				"",
 				"",
 				http.StatusOK,
 			),
@@ -135,6 +191,7 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 				"/users?status=active&page=2",
 				nil,
 				"",
+				"",
 				http.StatusOK,
 			),
 			method: "GET",
@@ -148,6 +205,7 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 				"GET",
 				"/users?role=admin&role=operator",
 				nil,
+				"",
 				"",
 				http.StatusOK,
 			),
@@ -164,6 +222,7 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 				map[string][]string{
 					"X-Test": {"one", "two"},
 				},
+				"",
 				"",
 				http.StatusOK,
 			),
@@ -183,6 +242,7 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 				map[string][]string{
 					"X-Test": {"expected"},
 				},
+				"",
 				"",
 				http.StatusOK,
 			),
@@ -204,6 +264,7 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 					"X-Test": {"expected"},
 				},
 				"",
+				"",
 				http.StatusOK,
 			),
 			method: "GET",
@@ -221,6 +282,7 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 				"/users",
 				nil,
 				"",
+				"",
 				http.StatusOK,
 			),
 			method: "POST",
@@ -235,6 +297,7 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 				"GET",
 				"/users",
 				nil,
+				"",
 				"",
 				http.StatusOK,
 			),
@@ -251,6 +314,7 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 				"/users?page=1",
 				nil,
 				"",
+				"",
 				http.StatusOK,
 			),
 			method: "GET",
@@ -265,6 +329,7 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 				"GET",
 				"/users",
 				nil,
+				"",
 				"",
 				http.StatusOK,
 			),
@@ -283,6 +348,7 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 					"X-Test": {"expected"},
 				},
 				"",
+				"",
 				http.StatusOK,
 			),
 			method: "GET",
@@ -299,6 +365,7 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 				map[string][]string{
 					"X-Test": {"expected"},
 				},
+				"",
 				"",
 				http.StatusOK,
 			),
@@ -320,6 +387,7 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 					"X-Test": {"expected"},
 				},
 				"",
+				"",
 				http.StatusOK,
 			),
 			method: "GET",
@@ -332,11 +400,12 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			expectedMiss:   true,
 		},
 		{
-			name: "body miss",
+			name: "JSON body miss",
 			fixture: newHTTPFixture(
 				"POST",
 				"/users",
 				nil,
+				"",
 				`{"name":"Alice"}`,
 				http.StatusOK,
 			),
@@ -348,11 +417,29 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			expectedMiss:   true,
 		},
 		{
+			name: "text body miss",
+			fixture: newHTTPFixture(
+				"POST",
+				"/text",
+				nil,
+				"expected",
+				"",
+				http.StatusOK,
+			),
+			method: "POST",
+			path:   "/text",
+			body:   "actual",
+
+			expectedStatus: http.StatusNotImplemented,
+			expectedMiss:   true,
+		},
+		{
 			name: "expected empty body actual non-empty body is miss",
 			fixture: newHTTPFixture(
 				"POST",
 				"/users",
 				nil,
+				"",
 				"",
 				http.StatusOK,
 			),
@@ -364,16 +451,33 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			expectedMiss:   true,
 		},
 		{
-			name: "expected body actual empty body is miss",
+			name: "expected JSON body actual empty body is miss",
 			fixture: newHTTPFixture(
 				"POST",
 				"/users",
 				nil,
+				"",
 				`{}`,
 				http.StatusOK,
 			),
 			method: "POST",
 			path:   "/users",
+
+			expectedStatus: http.StatusNotImplemented,
+			expectedMiss:   true,
+		},
+		{
+			name: "expected text body actual empty body is miss",
+			fixture: newHTTPFixture(
+				"POST",
+				"/text",
+				nil,
+				"expected",
+				"",
+				http.StatusOK,
+			),
+			method: "POST",
+			path:   "/text",
 
 			expectedStatus: http.StatusNotImplemented,
 			expectedMiss:   true,
@@ -387,34 +491,56 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 				[]model.FixtureSpec{tt.fixture},
 			)
 
-			if err := service.Mount(context.Background()); err != nil {
-				t.Fatalf("Mount() error = %v", err)
+			if err := service.Mount(
+				context.Background(),
+			); err != nil {
+				t.Fatalf(
+					"Mount() error = %v",
+					err,
+				)
 			}
+
 			t.Cleanup(func() {
-				if err := service.Unmount(context.Background()); err != nil {
-					t.Errorf("Unmount() error = %v", err)
+				if err := service.Unmount(
+					context.Background(),
+				); err != nil {
+					t.Errorf(
+						"Unmount() error = %v",
+						err,
+					)
 				}
 			})
 
 			req, err := http.NewRequestWithContext(
 				t.Context(),
 				tt.method,
-				"http://"+service.GetRuntimeAddress()+tt.path,
+				"http://"+
+					service.GetRuntimeAddress()+
+					tt.path,
 				strings.NewReader(tt.body),
 			)
 			if err != nil {
-				t.Fatalf("cannot create request: %v", err)
+				t.Fatalf(
+					"cannot create request: %v",
+					err,
+				)
 			}
 
 			for key, values := range tt.headers {
 				for _, value := range values {
-					req.Header.Add(key, value)
+					req.Header.Add(
+						key,
+						value,
+					)
 				}
 			}
 
 			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
-				t.Fatalf("request error = %v", err)
+				t.Fatalf(
+					"request error = %v",
+					err,
+				)
 			}
 			defer resp.Body.Close()
 
@@ -427,7 +553,9 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			}
 
 			gotMiss := resp.Header.Get(
-				string(keys.E2EngineMockMissHeader),
+				string(
+					keys.E2EngineMockMissHeader,
+				),
 			) == "true"
 
 			if gotMiss != tt.expectedMiss {
@@ -442,83 +570,137 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 }
 
 func TestMockHTTPServiceResponse(t *testing.T) {
-	service := newTestMockHTTPService(
-		t,
-		[]model.FixtureSpec{
-			{
-				When: model.FixtureWhen{
-					HTTP: &model.HTTPFixtureWhen{
-						Method: "GET",
-						Path:   "/users",
-					},
+	tests := []struct {
+		name         string
+		response     *model.HTTPResponse
+		expectedBody string
+	}{
+		{
+			name: "text body",
+			response: &model.HTTPResponse{
+				StatusCode: http.StatusCreated,
+				Headers: map[string][]string{
+					"X-Test": {"one", "two"},
 				},
-				Then: model.FixtureThen{
-					HTTP: &model.HTTPFixtureThen{
-						Status: http.StatusCreated,
-						Headers: map[string][]string{
-							"X-Test": {"one", "two"},
-						},
-						Body: `{"id":42}`,
-					},
-				},
+				Body: "plain text response",
 			},
+			expectedBody: "plain text response",
 		},
-	)
-
-	if err := service.Mount(context.Background()); err != nil {
-		t.Fatalf("Mount() error = %v", err)
-	}
-	t.Cleanup(func() {
-		if err := service.Unmount(context.Background()); err != nil {
-			t.Errorf("Unmount() error = %v", err)
-		}
-	})
-
-	req, err := http.NewRequestWithContext(
-		t.Context(),
-		http.MethodGet,
-		"http://"+service.GetRuntimeAddress()+"/users",
-		nil,
-	)
-	if err != nil {
-		t.Fatalf("cannot create request: %v", err)
+		{
+			name: "JSON body preserves authored representation",
+			response: &model.HTTPResponse{
+				StatusCode: http.StatusCreated,
+				Headers: map[string][]string{
+					"X-Test": {"one", "two"},
+				},
+				BodyJSON: "{\n  \"id\": 42\n}",
+			},
+			expectedBody: "{\n  \"id\": 42\n}",
+		},
 	}
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("request error = %v", err)
-	}
-	defer resp.Body.Close()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := newTestMockHTTPService(
+				t,
+				[]model.FixtureSpec{
+					{
+						When: model.FixtureWhen{
+							HTTP: &model.HTTPRequestPattern{
+								Method: "GET",
+								Path:   "/users",
+							},
+						},
+						Then: model.FixtureThen{
+							HTTP: tt.response,
+						},
+					},
+				},
+			)
 
-	if resp.StatusCode != http.StatusCreated {
-		t.Errorf(
-			"expected status %d, got %d",
-			http.StatusCreated,
-			resp.StatusCode,
-		)
-	}
+			if err := service.Mount(
+				context.Background(),
+			); err != nil {
+				t.Fatalf(
+					"Mount() error = %v",
+					err,
+				)
+			}
 
-	values := resp.Header.Values("X-Test")
-	if len(values) != 2 ||
-		values[0] != "one" ||
-		values[1] != "two" {
-		t.Errorf(
-			"expected X-Test headers [one two], got %v",
-			values,
-		)
-	}
+			t.Cleanup(func() {
+				if err := service.Unmount(
+					context.Background(),
+				); err != nil {
+					t.Errorf(
+						"Unmount() error = %v",
+						err,
+					)
+				}
+			})
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("cannot read response body: %v", err)
-	}
+			req, err := http.NewRequestWithContext(
+				t.Context(),
+				http.MethodGet,
+				"http://"+
+					service.GetRuntimeAddress()+
+					"/users",
+				nil,
+			)
+			if err != nil {
+				t.Fatalf(
+					"cannot create request: %v",
+					err,
+				)
+			}
 
-	if string(body) != `{"id":42}` {
-		t.Errorf(
-			"expected response body %q, got %q",
-			`{"id":42}`,
-			string(body),
-		)
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf(
+					"request error = %v",
+					err,
+				)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode !=
+				http.StatusCreated {
+				t.Errorf(
+					"expected status %d, got %d",
+					http.StatusCreated,
+					resp.StatusCode,
+				)
+			}
+
+			values := resp.Header.Values(
+				"X-Test",
+			)
+			if len(values) != 2 ||
+				values[0] != "one" ||
+				values[1] != "two" {
+				t.Errorf(
+					"expected X-Test headers [one two], got %v",
+					values,
+				)
+			}
+
+			body, err := io.ReadAll(
+				resp.Body,
+			)
+			if err != nil {
+				t.Fatalf(
+					"cannot read response body: %v",
+					err,
+				)
+			}
+
+			if string(body) != tt.expectedBody {
+				t.Errorf(
+					"expected response body %q, got %q",
+					tt.expectedBody,
+					string(body),
+				)
+			}
+		})
 	}
 }
 
@@ -552,21 +734,23 @@ func newHTTPFixture(
 	method,
 	path string,
 	headers map[string][]string,
-	body string,
+	body,
+	bodyJSON string,
 	status int,
 ) model.FixtureSpec {
 	return model.FixtureSpec{
 		When: model.FixtureWhen{
-			HTTP: &model.HTTPFixtureWhen{
-				Method:  method,
-				Path:    path,
-				Headers: headers,
-				Body:    body,
+			HTTP: &model.HTTPRequestPattern{
+				Method:   method,
+				Path:     path,
+				Headers:  headers,
+				Body:     body,
+				BodyJSON: bodyJSON,
 			},
 		},
 		Then: model.FixtureThen{
-			HTTP: &model.HTTPFixtureThen{
-				Status: status,
+			HTTP: &model.HTTPResponse{
+				StatusCode: status,
 			},
 		},
 	}

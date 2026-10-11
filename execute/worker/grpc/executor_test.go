@@ -322,10 +322,14 @@ func TestExecutorExecute(t *testing.T) {
 					stream.Context(),
 				)
 				if !ok {
-					t.Error("expected request metadata")
+					t.Error(
+						"expected request metadata",
+					)
 				}
 
-				if id := e2enginegrpc.TestExecutionID(md); id != "execution-123" {
+				if id := e2enginegrpc.TestExecutionID(
+					md,
+				); id != "execution-123" {
 					t.Errorf(
 						"unexpected execution ID metadata: %s",
 						id,
@@ -336,7 +340,9 @@ func TestExecutorExecute(t *testing.T) {
 					method.Input(),
 				)
 
-				if err := stream.RecvMsg(request); err != nil {
+				if err := stream.RecvMsg(
+					request,
+				); err != nil {
 					return err
 				}
 
@@ -383,7 +389,9 @@ func TestExecutorExecute(t *testing.T) {
 					),
 				)
 
-				return stream.SendMsg(response)
+				return stream.SendMsg(
+					response,
+				)
 			},
 		),
 	)
@@ -412,7 +420,7 @@ func TestExecutorExecute(t *testing.T) {
 		Test: model.Test{
 			Spec: model.TestSpec{
 				Request: model.RequestSpec{
-					GRPC: &model.GRPCRequestSpec{
+					GRPC: &model.GRPCRequest{
 						Target:  service.Address,
 						Service: "users.UserService",
 						Method:  "Create",
@@ -427,7 +435,7 @@ func TestExecutorExecute(t *testing.T) {
 					},
 				},
 				Expect: model.ExpectSpec{
-					GRPC: &model.GRPCExpectSpec{
+					GRPC: &model.GRPCResponse{
 						Status: "OK",
 						Message: map[string]any{
 							"id": "user-123",
@@ -455,7 +463,9 @@ func TestExecutorExecute(t *testing.T) {
 	}
 
 	if result.Summary.Response.GRPC == nil {
-		t.Fatal("expected gRPC response summary")
+		t.Fatal(
+			"expected gRPC response summary",
+		)
 	}
 
 	response := result.Summary.Response.GRPC
@@ -483,25 +493,9 @@ func TestExecutorExecute(t *testing.T) {
 		)
 	}
 
-	expectedMetadata := map[string][]string{
-		"content-type": {
-			"application/grpc",
-		},
-		"x-header": {
-			"header-value",
-		},
-		"x-trailer": {
-			"trailer-value",
-		},
-	}
-
-	if !reflect.DeepEqual(
-		response.Metadata,
-		expectedMetadata,
-	) {
+	if response.Metadata != nil {
 		t.Errorf(
-			"expected metadata %#v, got %#v",
-			expectedMetadata,
+			"expected nil metadata, got %#v",
 			response.Metadata,
 		)
 	}

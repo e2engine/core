@@ -3,8 +3,6 @@ package model
 import (
 	"context"
 	nativeerrors "errors"
-	"net/url"
-	"strings"
 
 	"github.com/ygrebnov/errorc"
 	modellib "github.com/ygrebnov/model"
@@ -108,7 +106,7 @@ type ServiceSpec struct {
 	HTTPTarget string `json:"http_target,omitempty" yaml:"http_target,omitempty" validate:"omitempty,httpurl"`
 	GRPCTarget string `json:"grpc_target,omitempty" yaml:"grpc_target,omitempty" validate:"omitempty,networkaddress"`
 
-	RequestDefaults *ServiceDefaults `json:"request_defaults,omitempty" yaml:"request_defaults,omitempty" validateElem:"omitempty,dive"`
+	RequestDefaults *RequestDefaults `json:"request_defaults,omitempty" yaml:"request_defaults,omitempty" validateElem:"omitempty,dive"`
 
 	Fixtures []FixtureSpec `json:"fixtures,omitempty" yaml:"fixtures,omitempty" validateElem:"dive"`
 
@@ -122,12 +120,27 @@ func (s *ServiceSpec) Validate() error {
 			return errorc.With(
 				errors.ErrInvalidSpec,
 				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
-				errorc.String(keys.Validation, "proto spec not allowed for HTTP service"),
+				errorc.String(keys.Validation, "proto spec is not allowed for HTTP service"),
+			)
+		}
+		if s.RequestDefaults != nil && len(s.RequestDefaults.Metadata) > 0 {
+			return errorc.With(
+				errors.ErrInvalidSpec,
+				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+				errorc.String(keys.Validation, "metadata is not allowed for HTTP service"),
 			)
 		}
 	}
 
 	if s.Kind == ServiceKindGRPC {
+		if s.RequestDefaults != nil && len(s.RequestDefaults.Headers) > 0 {
+			return errorc.With(
+				errors.ErrInvalidSpec,
+				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+				errorc.String(keys.Validation, "headers are not allowed for GRPC service"),
+			)
+		}
+
 		if s.Proto == nil {
 			return errorc.With(
 				errors.ErrInvalidSpec,
@@ -260,12 +273,22 @@ func (s *ServiceSpec) Validate() error {
 				)
 			}
 
-			u, err := url.ParseRequestURI(fixture.When.HTTP.Path)
-			if err != nil || u.Path == "" || !strings.HasPrefix(u.Path, "/") {
-				return errorc.With(
-					errors.ErrInvalidSpec,
-					errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
-					errorc.String(keys.Validation, "invalid HTTP fixture path"),
+			if err := fixture.When.HTTP.Validate(); err != nil {
+				return nativeerrors.Join(
+					errorc.With(
+						errors.ErrInvalidSpec,
+						errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+					),
+					err,
+				)
+			}
+			if err := fixture.Then.HTTP.Validate(); err != nil {
+				return nativeerrors.Join(
+					errorc.With(
+						errors.ErrInvalidSpec,
+						errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+					),
+					err,
 				)
 			}
 
@@ -290,8 +313,9 @@ func (s *ServiceSpec) Validate() error {
 	return nil
 }
 
-type ServiceDefaults struct {
-	Headers map[string][]string `json:"headers,omitempty" yaml:"headers,omitempty"`
+type RequestDefaults struct {
+	Headers  map[string][]string `json:"headers,omitempty" yaml:"headers,omitempty"`
+	Metadata map[string][]string `json:"metadata,omitempty" yaml:"metadata,omitempty"`
 }
 
 type GRPCProtoSpec struct {
@@ -347,36 +371,13 @@ type FixtureSpec struct {
 }
 
 type FixtureWhen struct {
-	HTTP *HTTPFixtureWhen `json:"http,omitempty" yaml:"http,omitempty" validateElem:"omitempty,dive"`
-	GRPC *GRPCFixtureWhen `json:"grpc,omitempty" yaml:"grpc,omitempty" validateElem:"omitempty,dive"`
+	HTTP *HTTPRequestPattern `json:"http,omitempty" yaml:"http,omitempty" validateElem:"omitempty,dive"`
+	GRPC *GRPCRequestPattern `json:"grpc,omitempty" yaml:"grpc,omitempty" validateElem:"omitempty,dive"`
 }
 
 type FixtureThen struct {
-	HTTP *HTTPFixtureThen `json:"http,omitempty" yaml:"http,omitempty" validateElem:"omitempty,dive"`
-	GRPC *GRPCFixtureThen `json:"grpc,omitempty" yaml:"grpc,omitempty" validateElem:"omitempty,dive"`
-}
-
-type HTTPFixtureWhen struct {
-	Method  string              `json:"method" yaml:"method" validate:"oneof(GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD)"`
-	Path    string              `json:"path" yaml:"path" validate:"min(1)"`
-	Headers map[string][]string `json:"headers,omitempty" yaml:"headers,omitempty"`
-	Body    string              `json:"body,omitempty" yaml:"body,omitempty" validate:"omitempty,validjson"`
-}
-
-type HTTPFixtureThen struct {
-	Status  int                 `json:"status" yaml:"status" validate:"min(100),max(599)"`
-	Headers map[string][]string `json:"headers,omitempty" yaml:"headers,omitempty"`
-	Body    string              `json:"body,omitempty" yaml:"body,omitempty" validate:"omitempty,validjson"`
-}
-
-type GRPCFixtureWhen struct {
-	Method  string         `json:"method" yaml:"method" validate:"min(1)"`
-	Message map[string]any `json:"message,omitempty" yaml:"message,omitempty"`
-}
-
-type GRPCFixtureThen struct {
-	Status  string         `json:"status,omitempty" yaml:"status,omitempty" validate:"omitempty,oneof(OK,Canceled,Unknown,InvalidArgument,DeadlineExceeded,NotFound,AlreadyExists,PermissionDenied,ResourceExhausted,FailedPrecondition,Aborted,OutOfRange,Unimplemented,Internal,Unavailable,DataLoss,Unauthenticated)"`
-	Message map[string]any `json:"message,omitempty" yaml:"message,omitempty"`
+	HTTP *HTTPResponse `json:"http,omitempty" yaml:"http,omitempty" validateElem:"omitempty,dive"`
+	GRPC *GRPCResponse `json:"grpc,omitempty" yaml:"grpc,omitempty" validateElem:"omitempty,dive"`
 }
 
 type EnvironmentsPage = Page[Environment]

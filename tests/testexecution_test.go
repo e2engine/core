@@ -433,13 +433,13 @@ func modelTestExecution() *model.TestExecution {
 func modelTestExecutionSummary() *model.TestExecutionSummary {
 	return &model.TestExecutionSummary{
 		Request: &model.TestExecutionRequestSummary{
-			HTTP: &model.TestExecutionHTTPRequestSummary{
+			HTTP: &model.HTTPRequest{
 				Method: "GET",
 				URL:    "http://localhost:8080/health",
 			},
 		},
 		Response: &model.TestExecutionResponseSummary{
-			HTTP: &model.TestExecutionHTTPResponseSummary{
+			HTTP: &model.HTTPResponse{
 				StatusCode: 200,
 				BodyJSON:   `{"status":"ok"}`,
 			},

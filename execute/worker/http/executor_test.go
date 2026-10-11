@@ -20,7 +20,7 @@ func TestBuildHTTPRequest(t *testing.T) {
 
 	tests := []struct {
 		name string
-		spec *model.HTTPRequestSpec
+		spec *model.HTTPRequest
 
 		expectedMethod      string
 		expectedURL         string
@@ -29,7 +29,7 @@ func TestBuildHTTPRequest(t *testing.T) {
 	}{
 		{
 			name: "basic request",
-			spec: &model.HTTPRequestSpec{
+			spec: &model.HTTPRequest{
 				Method: nethttp.MethodGet,
 				URL:    "https://example.com/users",
 			},
@@ -37,11 +37,22 @@ func TestBuildHTTPRequest(t *testing.T) {
 			expectedURL:    "https://example.com/users",
 		},
 		{
-			name: "body gets default content type",
-			spec: &model.HTTPRequestSpec{
+			name: "body does not get default content type",
+			spec: &model.HTTPRequest{
 				Method: nethttp.MethodPost,
 				URL:    "https://example.com/users",
 				Body:   `{"id":42}`,
+			},
+			expectedMethod: nethttp.MethodPost,
+			expectedURL:    "https://example.com/users",
+			expectedBody:   `{"id":42}`,
+		},
+		{
+			name: "body JSON gets default content type",
+			spec: &model.HTTPRequest{
+				Method:   nethttp.MethodPost,
+				URL:      "https://example.com/users",
+				BodyJSON: `{"id":42}`,
 			},
 			expectedMethod:      nethttp.MethodPost,
 			expectedURL:         "https://example.com/users",
@@ -49,14 +60,14 @@ func TestBuildHTTPRequest(t *testing.T) {
 			expectedContentType: "application/json",
 		},
 		{
-			name: "explicit content type is preserved",
-			spec: &model.HTTPRequestSpec{
+			name: "body JSON explicit content type is preserved",
+			spec: &model.HTTPRequest{
 				Method: nethttp.MethodPost,
 				URL:    "https://example.com/users",
 				Headers: nethttp.Header{
 					"Content-Type": {"application/problem+json"},
 				},
-				Body: `{"id":42}`,
+				BodyJSON: `{"id":42}`,
 			},
 			expectedMethod:      nethttp.MethodPost,
 			expectedURL:         "https://example.com/users",
@@ -65,7 +76,7 @@ func TestBuildHTTPRequest(t *testing.T) {
 		},
 		{
 			name: "empty body does not get content type",
-			spec: &model.HTTPRequestSpec{
+			spec: &model.HTTPRequest{
 				Method: nethttp.MethodPost,
 				URL:    "https://example.com/users",
 			},
@@ -113,7 +124,9 @@ func TestBuildHTTPRequest(t *testing.T) {
 				)
 			}
 
-			if id := e2enginehttp.TestExecutionID(req.Header); id != "execution-123" {
+			if id := e2enginehttp.TestExecutionID(
+				req.Header,
+			); id != "execution-123" {
 				t.Errorf(
 					"expected execution ID header %q, got %q",
 					"execution-123",
@@ -122,7 +135,9 @@ func TestBuildHTTPRequest(t *testing.T) {
 			}
 
 			if req.Context() != ctx {
-				t.Error("expected request to use provided context")
+				t.Error(
+					"expected request to use provided context",
+				)
 			}
 
 			if tt.expectedBody == "" {
@@ -166,13 +181,13 @@ func TestBuildHTTPRequest(t *testing.T) {
 }
 
 func TestBuildHTTPRequestQuery(t *testing.T) {
-	spec := &model.HTTPRequestSpec{
+	spec := &model.HTTPRequest{
 		Method: nethttp.MethodGet,
 		URL: "https://example.com/users?" +
 			"existing=value&override=old",
-		Query: map[string]string{
-			"added":    "new",
-			"override": "new",
+		Query: map[string][]string{
+			"added":    {"new"},
+			"override": {"new"},
 		},
 	}
 
@@ -198,25 +213,29 @@ func TestBuildHTTPRequestQuery(t *testing.T) {
 		)
 	}
 
-	if query.Get("added") != "new" {
+	if !reflect.DeepEqual(
+		query["added"],
+		[]string{"new"},
+	) {
 		t.Errorf(
-			"expected added query parameter %q, got %q",
-			"new",
-			query.Get("added"),
+			"unexpected added query parameters: %#v",
+			query["added"],
 		)
 	}
 
-	if query.Get("override") != "new" {
+	if !reflect.DeepEqual(
+		query["override"],
+		[]string{"old", "new"},
+	) {
 		t.Errorf(
-			"expected overridden query parameter %q, got %q",
-			"new",
-			query.Get("override"),
+			"unexpected override query parameters: %#v",
+			query["override"],
 		)
 	}
 }
 
 func TestBuildHTTPRequestHeaders(t *testing.T) {
-	spec := &model.HTTPRequestSpec{
+	spec := &model.HTTPRequest{
 		Method: nethttp.MethodGet,
 		URL:    "https://example.com/users",
 		Headers: e2enginehttp.WithTestExecutionID(
@@ -252,7 +271,9 @@ func TestBuildHTTPRequestHeaders(t *testing.T) {
 		)
 	}
 
-	if id := e2enginehttp.TestExecutionID(req.Header); id != "execution-123" {
+	if id := e2enginehttp.TestExecutionID(
+		req.Header,
+	); id != "execution-123" {
 		t.Errorf(
 			"expected execution header to be overridden, got %s",
 			id,
@@ -268,7 +289,7 @@ func TestBuildHTTPRequestCanceledContext(t *testing.T) {
 
 	req, err := buildHTTPRequest(
 		ctx,
-		&model.HTTPRequestSpec{
+		&model.HTTPRequest{
 			Method: nethttp.MethodGet,
 			URL:    "https://example.com",
 		},
@@ -403,7 +424,9 @@ func TestExecutorExecute(t *testing.T) {
 				w nethttp.ResponseWriter,
 				r *nethttp.Request,
 			) {
-				if id := e2enginehttp.TestExecutionID(r.Header); id != "execution-123" {
+				if id := e2enginehttp.TestExecutionID(
+					r.Header,
+				); id != "execution-123" {
 					t.Errorf(
 						"expected execution ID %q, got %q",
 						"execution-123",
@@ -435,15 +458,15 @@ func TestExecutorExecute(t *testing.T) {
 		Test: model.Test{
 			Spec: model.TestSpec{
 				Request: model.RequestSpec{
-					HTTP: &model.HTTPRequestSpec{
+					HTTP: &model.HTTPRequest{
 						Method: nethttp.MethodGet,
 						URL:    server.URL,
 					},
 				},
 				Expect: model.ExpectSpec{
-					HTTP: &model.HTTPExpectSpec{
-						Status: nethttp.StatusOK,
-						Body: `{
+					HTTP: &model.HTTPResponse{
+						StatusCode: nethttp.StatusOK,
+						BodyJSON: `{
 							"name": "test",
 							"id": 42
 						}`,

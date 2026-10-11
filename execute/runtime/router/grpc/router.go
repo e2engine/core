@@ -5,6 +5,7 @@ import (
 	nativeerrors "errors"
 	"fmt"
 	"net"
+	"strings"
 
 	e2engine "github.com/e2engine/instrumentation-go"
 	e2enginegrpc "github.com/e2engine/instrumentation-go/grpc"
@@ -300,13 +301,16 @@ func (r *Router) newHandler(
 
 		responseStatus := status.Convert(err)
 
+		service, method := splitFullMethod(fullMethod)
+
 		r.calls.Record(
 			call.Call{
 				TestExecutionID: testExecutionID,
 				ServiceID:       route.ServiceID,
 				GRPC: &call.GRPCCall{
 					Request: call.GRPCRequest{
-						RPC: fullMethod,
+						Service: service,
+						Method:  method,
 						Metadata: cloneMetadata(
 							incomingMetadata,
 						),
@@ -348,6 +352,14 @@ func (r *Router) newHandler(
 
 		return stream.SendMsg(&response)
 	}
+}
+
+func splitFullMethod(fullMethod string) (service, method string) {
+	fullMethod = strings.TrimPrefix(fullMethod, "/")
+
+	service, method, _ = strings.Cut(fullMethod, "/")
+
+	return service, method
 }
 
 func cloneMetadata(source metadata.MD) map[string][]string {

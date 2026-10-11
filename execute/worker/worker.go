@@ -8,6 +8,7 @@ import (
 	"github.com/ygrebnov/errorc"
 
 	"github.com/e2engine/core/execute"
+	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/execute/evaluate"
 	grpcservice "github.com/e2engine/core/execute/runtime/service/grpc"
 	grpcworker "github.com/e2engine/core/execute/worker/grpc"
@@ -79,6 +80,11 @@ func (w *Worker) Execute(
 	)
 	defer cancel()
 
+	executor, err := w.getExecutor(&job.Test.Spec)
+	if err != nil {
+		return nil, err
+	}
+
 	callStore := job.Runtime.Calls
 
 	result := &execute.TestExecutionResult{
@@ -87,18 +93,13 @@ func (w *Worker) Execute(
 		Summary:              newSummary(&job.Test.Spec),
 	}
 
-	if err := validateExpectedCalls(
+	if errValidate := validateExpectedCalls(
 		job.Environment.Spec.Services,
 		job.Test.Spec.Expect.Calls,
-	); err != nil {
-		setExecutionError(result, err)
+	); errValidate != nil {
+		setExecutionError(result, errValidate)
 
 		return result, nil
-	}
-
-	executor, err := w.getExecutor(&job.Test.Spec)
-	if err != nil {
-		return nil, err
 	}
 
 	if err := executor.Execute(
@@ -106,6 +107,7 @@ func (w *Worker) Execute(
 		&job,
 		result,
 	); err != nil {
+		summarizeCalls(result, callStore)
 		setExecutionError(result, err)
 
 		return result, nil
@@ -118,10 +120,13 @@ func (w *Worker) Execute(
 		callStore,
 		result,
 	); err != nil {
+		summarizeCalls(result, callStore)
 		setExecutionError(result, err)
 
 		return result, nil
 	}
+
+	summarizeCalls(result, callStore)
 
 	if len(result.Summary.Deviations) == 0 {
 		result.Status = model.ExecutionStatusPassed
@@ -132,6 +137,16 @@ func (w *Worker) Execute(
 	result.FinishedAt = time.Now().UTC()
 
 	return result, nil
+}
+
+func summarizeCalls(
+	result *execute.TestExecutionResult,
+	callStore call.Reader,
+) {
+	result.Summary.Calls = evaluate.SummarizeCalls(
+		result.ExecutionID,
+		callStore,
+	)
 }
 
 func (w *Worker) getExecutor(
@@ -151,7 +166,7 @@ func (w *Worker) getExecutor(
 
 func validateExpectedCalls(
 	services []model.ServiceSpec,
-	expected []model.CallExpectation,
+	expected []model.ServiceExpectedCalls,
 ) error {
 	byID := make(map[string]model.ServiceSpec, len(services))
 	for i := range services {

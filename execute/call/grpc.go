@@ -6,7 +6,8 @@ type GRPCCall struct {
 }
 
 type GRPCRequest struct {
-	RPC      string
+	Service  string
+	Method   string
 	Metadata map[string][]string
 	Message  []byte
 }

@@ -62,14 +62,14 @@ func TestEvaluatorEvaluateCalls(t *testing.T) {
 				Mode: model.ServiceModeMocked,
 			},
 		},
-		[]model.CallExpectation{
+		[]model.ServiceExpectedCalls{
 			{
 				ServiceID: "http-service",
-				HTTP:      &model.HTTPCallExpectation{},
+				HTTP:      &model.HTTPRequestPattern{},
 			},
 			{
 				ServiceID: "grpc-service",
-				GRPC:      &model.GRPCCallExpectation{},
+				GRPC:      &model.GRPCRequestPattern{},
 			},
 		},
 		calls,
@@ -388,10 +388,10 @@ func TestEvaluatorEvaluateExpectedCalls(t *testing.T) {
 						Kind: model.ServiceKindHTTP,
 					},
 				},
-				[]model.CallExpectation{
+				[]model.ServiceExpectedCalls{
 					{
 						ServiceID: "service-1",
-						HTTP:      &model.HTTPCallExpectation{},
+						HTTP:      &model.HTTPRequestPattern{},
 						Count:     tt.count,
 					},
 				},
@@ -468,10 +468,10 @@ func TestEvaluatorEvaluateExpectedCallsError(
 				Kind: model.ServiceKindHTTP,
 			},
 		},
-		[]model.CallExpectation{
+		[]model.ServiceExpectedCalls{
 			{
 				ServiceID: "service-1",
-				HTTP:      &model.HTTPCallExpectation{},
+				HTTP:      &model.HTTPRequestPattern{},
 			},
 		},
 		calls,
@@ -491,7 +491,7 @@ func TestEvaluatorMatches(t *testing.T) {
 	tests := []struct {
 		name string
 
-		expected model.CallExpectation
+		expected model.ServiceExpectedCalls
 
 		expectedHTTPCalls int
 		expectedGRPCCalls int
@@ -499,16 +499,16 @@ func TestEvaluatorMatches(t *testing.T) {
 	}{
 		{
 			name: "HTTP",
-			expected: model.CallExpectation{
-				HTTP: &model.HTTPCallExpectation{},
+			expected: model.ServiceExpectedCalls{
+				HTTP: &model.HTTPRequestPattern{},
 			},
 			expectedHTTPCalls: 1,
 			expectedMatch:     true,
 		},
 		{
 			name: "gRPC",
-			expected: model.CallExpectation{
-				GRPC: &model.GRPCCallExpectation{},
+			expected: model.ServiceExpectedCalls{
+				GRPC: &model.GRPCRequestPattern{},
 			},
 			expectedGRPCCalls: 1,
 			expectedMatch:     true,
@@ -592,8 +592,8 @@ func TestEvaluatorMatchesError(t *testing.T) {
 		context.Background(),
 		&model.ServiceSpec{},
 		call.Call{},
-		model.CallExpectation{
-			HTTP: &model.HTTPCallExpectation{},
+		model.ServiceExpectedCalls{
+			HTTP: &model.HTTPRequestPattern{},
 		},
 	)
 
@@ -619,7 +619,7 @@ func (e *testCallEvaluator) Matches(
 	_ context.Context,
 	_ *model.ServiceSpec,
 	_ call.Call,
-	_ model.CallExpectation,
+	_ model.ServiceExpectedCalls,
 ) (bool, error) {
 	e.matchesCalls++
 

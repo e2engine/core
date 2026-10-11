@@ -3,8 +3,6 @@ package model
 import (
 	"context"
 	nativeerrors "errors"
-	"net/url"
-	"strings"
 
 	"github.com/ygrebnov/errorc"
 	modellib "github.com/ygrebnov/model"
@@ -46,6 +44,12 @@ func (t *Test) Validate(ctx context.Context) error {
 
 	if t.Spec.Request.HTTP != nil {
 		if err := t.Spec.Request.HTTP.Validate(); err != nil {
+			return invalidTestSpec(err)
+		}
+	}
+
+	if t.Spec.Expect.HTTP != nil {
+		if err := t.Spec.Expect.HTTP.Validate(); err != nil {
 			return invalidTestSpec(err)
 		}
 	}
@@ -124,24 +128,24 @@ func invalidTestSpec(validation error) error {
 }
 
 type RequestSpec struct {
-	HTTP *HTTPRequestSpec `json:"http,omitempty" yaml:"http,omitempty" validateElem:"omitempty,dive"`
-	GRPC *GRPCRequestSpec `json:"grpc,omitempty" yaml:"grpc,omitempty" validateElem:"omitempty,dive"`
+	HTTP *HTTPRequest `json:"http,omitempty" yaml:"http,omitempty" validateElem:"omitempty,dive"`
+	GRPC *GRPCRequest `json:"grpc,omitempty" yaml:"grpc,omitempty" validateElem:"omitempty,dive"`
 }
 
 type ExpectSpec struct {
-	HTTP  *HTTPExpectSpec   `json:"http,omitempty" yaml:"http,omitempty" validateElem:"omitempty,dive"`
-	GRPC  *GRPCExpectSpec   `json:"grpc,omitempty" yaml:"grpc,omitempty" validateElem:"omitempty,dive"`
-	Calls []CallExpectation `json:"calls,omitempty" yaml:"calls,omitempty" validateElem:"dive"`
+	HTTP  *HTTPResponse          `json:"http,omitempty" yaml:"http,omitempty" validateElem:"omitempty,dive"`
+	GRPC  *GRPCResponse          `json:"grpc,omitempty" yaml:"grpc,omitempty" validateElem:"omitempty,dive"`
+	Calls []ServiceExpectedCalls `json:"calls,omitempty" yaml:"calls,omitempty" validateElem:"dive"`
 }
 
-type CallExpectation struct {
-	ServiceID string               `json:"service_id" yaml:"service_id" validate:"min(3),max(200)"`
-	Count     *int                 `json:"count,omitempty" yaml:"count,omitempty" validate:"omitempty,min(0)"`
-	HTTP      *HTTPCallExpectation `json:"http,omitempty" yaml:"http,omitempty" validateElem:"omitempty,dive"`
-	GRPC      *GRPCCallExpectation `json:"grpc,omitempty" yaml:"grpc,omitempty" validateElem:"omitempty,dive"`
+type ServiceExpectedCalls struct {
+	ServiceID string              `json:"service_id" yaml:"service_id" validate:"min(3),max(200)"`
+	Count     *int                `json:"count,omitempty" yaml:"count,omitempty" validate:"omitempty,min(0)"`
+	HTTP      *HTTPRequestPattern `json:"http,omitempty" yaml:"http,omitempty" validateElem:"omitempty,dive"`
+	GRPC      *GRPCRequestPattern `json:"grpc,omitempty" yaml:"grpc,omitempty" validateElem:"omitempty,dive"`
 }
 
-func (c *CallExpectation) Validate() error {
+func (c *ServiceExpectedCalls) Validate() error {
 	httpSet := c.HTTP != nil
 	grpcSet := c.GRPC != nil
 
@@ -151,73 +155,11 @@ func (c *CallExpectation) Validate() error {
 		)
 	}
 
-	return nil
-}
-
-type HTTPCallExpectation struct {
-	Method  string              `json:"method" yaml:"method" validate:"oneof(GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD)"`
-	Path    string              `json:"path" yaml:"path" validate:"min(1)"`
-	Query   map[string][]string `json:"query,omitempty" yaml:"query,omitempty"`
-	Headers map[string][]string `json:"headers,omitempty" yaml:"headers,omitempty"`
-	Body    string              `json:"body,omitempty" yaml:"body,omitempty" validate:"omitempty,validjson"`
-}
-
-type GRPCCallExpectation struct {
-	Service  string              `json:"service" yaml:"service" validate:"min(1)"`
-	Method   string              `json:"method" yaml:"method" validate:"min(1)"`
-	Metadata map[string][]string `json:"metadata,omitempty" yaml:"metadata,omitempty"`
-	Message  map[string]any      `json:"message,omitempty" yaml:"message,omitempty"`
-}
-
-type HTTPRequestSpec struct {
-	Method  string              `json:"method" yaml:"method" validate:"oneof(GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD)"`
-	URL     string              `json:"url" yaml:"url" validate:"min(1)"`
-	Query   map[string]string   `json:"query,omitempty" yaml:"query,omitempty"`
-	Headers map[string][]string `json:"headers,omitempty" yaml:"headers,omitempty"`
-	Body    string              `json:"body,omitempty" yaml:"body,omitempty" validate:"omitempty,validjson"`
-}
-
-func (s *HTTPRequestSpec) Validate() error {
-	u, err := url.Parse(s.URL)
-	if err != nil {
-		return errorc.With(
-			errorc.New("invalid HTTP request URL"),
-			errorc.Error(keys.Cause, err),
-		)
-	}
-
-	if u.Scheme != "http" &&
-		u.Scheme != "https" {
-		return errorc.New(
-			"HTTP request URL scheme must be http or https",
-		)
-	}
-
-	if strings.TrimSpace(u.Host) == "" {
-		return errorc.New(
-			"HTTP request URL must contain a host",
-		)
+	if c.HTTP != nil {
+		return c.HTTP.Validate()
 	}
 
 	return nil
-}
-
-type HTTPExpectSpec struct {
-	Status int    `json:"status" yaml:"status" validate:"min(100),max(599)"`
-	Body   string `json:"body,omitempty" yaml:"body,omitempty" validate:"omitempty,validjson"`
-}
-
-type GRPCRequestSpec struct {
-	Target   string              `json:"target" yaml:"target" validate:"networkaddress"`
-	Service  string              `json:"service" yaml:"service" validate:"min(1)"`
-	Method   string              `json:"method" yaml:"method" validate:"min(1)"`
-	Metadata map[string][]string `json:"metadata,omitempty" yaml:"metadata,omitempty"`
-	Message  map[string]any      `json:"message,omitempty" yaml:"message,omitempty"`
-}
-
-type GRPCExpectSpec struct {
-	Status  string         `json:"status" yaml:"status" validate:"oneof(OK,Canceled,Unknown,InvalidArgument,DeadlineExceeded,NotFound,AlreadyExists,PermissionDenied,ResourceExhausted,FailedPrecondition,Aborted,OutOfRange,Unimplemented,Internal,Unavailable,DataLoss,Unauthenticated)"`
-	Message map[string]any `json:"message,omitempty" yaml:"message,omitempty"`
 }
 
 type TestsPage = Page[Test]

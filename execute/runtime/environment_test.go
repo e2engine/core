@@ -885,14 +885,14 @@ func newTestEnvironment(
 			Fixtures: []model.FixtureSpec{
 				{
 					When: model.FixtureWhen{
-						HTTP: &model.HTTPFixtureWhen{
+						HTTP: &model.HTTPRequestPattern{
 							Method: "GET",
 							Path:   "/",
 						},
 					},
 					Then: model.FixtureThen{
-						HTTP: &model.HTTPFixtureThen{
-							Status: 200,
+						HTTP: &model.HTTPResponse{
+							StatusCode: 200,
 						},
 					},
 				},
@@ -986,14 +986,14 @@ func validTestEnvironment() *model.Environment {
 					Fixtures: []model.FixtureSpec{
 						{
 							When: model.FixtureWhen{
-								HTTP: &model.HTTPFixtureWhen{
+								HTTP: &model.HTTPRequestPattern{
 									Method: "GET",
 									Path:   "/",
 								},
 							},
 							Then: model.FixtureThen{
-								HTTP: &model.HTTPFixtureThen{
-									Status: 200,
+								HTTP: &model.HTTPResponse{
+									StatusCode: 200,
 								},
 							},
 						},
