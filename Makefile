@@ -17,6 +17,7 @@ mockgen: install-mockgen
 	$(MOCKGEN) -destination=mock/Repository.go -package=mock github.com/e2engine/core/repository EntityRepository,ResourceRepository,TestRepository,TestExecutionRepository,TestSuiteExecutionRepository
 	$(MOCKGEN) -destination=mock/Runtime.go -package=mock github.com/e2engine/core/execute/runtime Service,ServiceProvider,Router,RouterProvider
 	$(MOCKGEN) -destination=mock/Execute.go -package=mock github.com/e2engine/core/execute ProtocolExecutor
+	go generate ./...
 
 .PHONY: lint
 lint: install-golangci-lint

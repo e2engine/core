@@ -168,6 +168,9 @@ func TestGRPCCode(t *testing.T) {
 }
 
 func TestCompileFixtures(t *testing.T) {
+	m1 := map[string]any{"id": "42"}
+	m2 := map[string]any{"message": "not found"}
+
 	specs := []model.FixtureSpec{
 		{
 			When: model.FixtureWhen{
@@ -180,9 +183,7 @@ func TestCompileFixtures(t *testing.T) {
 							"two",
 						},
 					},
-					Message: map[string]any{
-						"id": "42",
-					},
+					Message: &m1,
 				},
 			},
 			Then: model.FixtureThen{
@@ -194,9 +195,7 @@ func TestCompileFixtures(t *testing.T) {
 							"four",
 						},
 					},
-					Message: map[string]any{
-						"message": "not found",
-					},
+					Message: &m2,
 				},
 			},
 		},
@@ -254,11 +253,11 @@ func TestCompileFixtures(t *testing.T) {
 		)
 	}
 
-	if fixture.message["id"] != "42" {
+	if (*fixture.message)["id"] != "42" {
 		t.Errorf(
 			"expected request id %q, got %v",
 			"42",
-			fixture.message["id"],
+			(*fixture.message)["id"],
 		)
 	}
 
@@ -570,7 +569,7 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 				{
 					service: "users.v1.UserService",
 					method:  "GetUser",
-					message: map[string]any{
+					message: &map[string]any{
 						"id": "42",
 					},
 				},
@@ -596,7 +595,7 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 							"two",
 						},
 					},
-					message: map[string]any{
+					message: &map[string]any{
 						"id": "42",
 					},
 				},
@@ -617,7 +616,7 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 					metadata: map[string][]string{
 						"x-request-id": {"one"},
 					},
-					message: map[string]any{
+					message: &map[string]any{
 						"id": "42",
 					},
 				},
@@ -631,7 +630,7 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 				{
 					service: "users.v1.AdminService",
 					method:  "GetUser",
-					message: map[string]any{
+					message: &map[string]any{
 						"id": "42",
 					},
 				},
@@ -645,7 +644,7 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 				{
 					service: "users.v1.UserService",
 					method:  "CreateUser",
-					message: map[string]any{
+					message: &map[string]any{
 						"id": "42",
 					},
 				},
@@ -659,7 +658,7 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 				{
 					service: "users.v1.UserService",
 					method:  "GetUser",
-					message: map[string]any{
+					message: &map[string]any{
 						"id": "43",
 					},
 				},
@@ -676,7 +675,7 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 					metadata: map[string][]string{
 						"x-request-id": {"one"},
 					},
-					message: map[string]any{
+					message: &map[string]any{
 						"id": "42",
 					},
 				},
@@ -696,7 +695,7 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 					metadata: map[string][]string{
 						"x-request-id": {"one"},
 					},
-					message: map[string]any{
+					message: &map[string]any{
 						"id": "42",
 					},
 				},
@@ -719,7 +718,7 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 					metadata: map[string][]string{
 						"x-request-id": {"one"},
 					},
-					message: map[string]any{
+					message: &map[string]any{
 						"id": "42",
 					},
 				},
@@ -784,7 +783,7 @@ func TestMockGRPCServiceMatchInvalidFixtureMessage(
 			{
 				service: "users.v1.UserService",
 				method:  "GetUser",
-				message: map[string]any{
+				message: &map[string]any{
 					"unknown": "value",
 				},
 			},
@@ -1046,7 +1045,7 @@ func TestMockGRPCServiceHandle(t *testing.T) {
 						"two",
 					},
 				},
-				message: map[string]any{
+				message: &map[string]any{
 					"id": "42",
 				},
 				status: codes.OK,

@@ -1,16 +1,21 @@
-package evaluate
+package evaluator
 
 import (
 	"context"
 	"errors"
 	"testing"
 
-	"github.com/e2engine/core/execute"
+	"go.uber.org/mock/gomock"
+
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/model"
 )
 
 func TestEvaluatorEvaluateCalls(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	reporter := NewMockdeviationReporter(ctrl)
+
 	httpEvaluator := &testCallEvaluator{
 		deviation: &model.TestExecutionDeviation{
 			Field:   "calls.http-service",
@@ -30,6 +35,7 @@ func TestEvaluatorEvaluateCalls(t *testing.T) {
 	evaluator := New(
 		httpEvaluator,
 		grpcEvaluator,
+		reporter,
 	)
 
 	calls := &call.Store{}
@@ -46,7 +52,10 @@ func TestEvaluatorEvaluateCalls(t *testing.T) {
 		GRPC:            &call.GRPCCall{},
 	})
 
-	result := newTestExecutionResult()
+	gomock.InOrder(
+		reporter.EXPECT().AddDeviation(httpEvaluator.deviation),
+		reporter.EXPECT().AddDeviation(grpcEvaluator.deviation),
+	)
 
 	err := evaluator.EvaluateCalls(
 		context.Background(),
@@ -73,35 +82,12 @@ func TestEvaluatorEvaluateCalls(t *testing.T) {
 			},
 		},
 		calls,
-		result,
+		"execution-1",
 	)
 	if err != nil {
 		t.Fatalf(
 			"EvaluateCalls() error = %v",
 			err,
-		)
-	}
-
-	if len(result.Summary.Deviations) != 2 {
-		t.Fatalf(
-			"expected 2 deviations, got %d",
-			len(result.Summary.Deviations),
-		)
-	}
-
-	if result.Summary.Deviations[0].Field !=
-		"calls.http-service" {
-		t.Errorf(
-			"expected HTTP deviation, got %+v",
-			result.Summary.Deviations[0],
-		)
-	}
-
-	if result.Summary.Deviations[1].Field !=
-		"calls.grpc-service" {
-		t.Errorf(
-			"expected gRPC deviation, got %+v",
-			result.Summary.Deviations[1],
 		)
 	}
 }
@@ -114,19 +100,22 @@ func TestEvaluatorEvaluateCallsCancelledContext(
 	)
 	cancel()
 
+	ctrl := gomock.NewController(t)
+
+	reporter := NewMockdeviationReporter(ctrl)
+
 	evaluator := New(
 		&testCallEvaluator{},
 		&testCallEvaluator{},
+		reporter,
 	)
-
-	result := newTestExecutionResult()
 
 	err := evaluator.EvaluateCalls(
 		ctx,
 		nil,
 		nil,
 		&call.Store{},
-		result,
+		"execution-1",
 	)
 
 	if !errors.Is(err, context.Canceled) {
@@ -138,6 +127,10 @@ func TestEvaluatorEvaluateCallsCancelledContext(
 }
 
 func TestEvaluatorEvaluateActualCalls(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	reporter := NewMockdeviationReporter(ctrl)
+
 	httpEvaluator := &testCallEvaluator{
 		deviation: &model.TestExecutionDeviation{
 			Field:   "calls.http-service",
@@ -155,6 +148,7 @@ func TestEvaluatorEvaluateActualCalls(t *testing.T) {
 	evaluator := New(
 		httpEvaluator,
 		grpcEvaluator,
+		reporter,
 	)
 
 	calls := &call.Store{}
@@ -185,7 +179,10 @@ func TestEvaluatorEvaluateActualCalls(t *testing.T) {
 		HTTP:            &call.HTTPCall{},
 	})
 
-	result := newTestExecutionResult()
+	gomock.InOrder(
+		reporter.EXPECT().AddDeviation(httpEvaluator.deviation),
+		reporter.EXPECT().AddDeviation(grpcEvaluator.deviation),
+	)
 
 	evaluator.evaluateActualCalls(
 		[]model.ServiceSpec{
@@ -205,15 +202,8 @@ func TestEvaluatorEvaluateActualCalls(t *testing.T) {
 			},
 		},
 		calls,
-		result,
+		"execution-1",
 	)
-
-	if len(result.Summary.Deviations) != 2 {
-		t.Fatalf(
-			"expected 2 deviations, got %d",
-			len(result.Summary.Deviations),
-		)
-	}
 
 	if httpEvaluator.deviationCalls != 1 {
 		t.Errorf(
@@ -233,11 +223,16 @@ func TestEvaluatorEvaluateActualCalls(t *testing.T) {
 func TestEvaluatorEvaluateActualCallsNoDeviation(
 	t *testing.T,
 ) {
+	ctrl := gomock.NewController(t)
+
+	reporter := NewMockdeviationReporter(ctrl)
+
 	httpEvaluator := &testCallEvaluator{}
 
 	evaluator := New(
 		httpEvaluator,
 		&testCallEvaluator{},
+		reporter,
 	)
 
 	calls := &call.Store{}
@@ -248,8 +243,6 @@ func TestEvaluatorEvaluateActualCallsNoDeviation(
 		HTTP:            &call.HTTPCall{},
 	})
 
-	result := newTestExecutionResult()
-
 	evaluator.evaluateActualCalls(
 		[]model.ServiceSpec{
 			{
@@ -259,15 +252,48 @@ func TestEvaluatorEvaluateActualCallsNoDeviation(
 			},
 		},
 		calls,
-		result,
+		"execution-1",
+	)
+}
+
+func TestEvaluatorEvaluateActualCallsUnsupportedServiceKind(
+	t *testing.T,
+) {
+	ctrl := gomock.NewController(t)
+
+	reporter := NewMockdeviationReporter(ctrl)
+
+	evaluator := New(
+		&testCallEvaluator{},
+		&testCallEvaluator{},
+		reporter,
 	)
 
-	if len(result.Summary.Deviations) != 0 {
-		t.Fatalf(
-			"expected no deviations, got %+v",
-			result.Summary.Deviations,
-		)
-	}
+	calls := &call.Store{}
+
+	calls.Record(call.Call{
+		TestExecutionID: "execution-1",
+		ServiceID:       "unsupported-service",
+		HTTP:            &call.HTTPCall{},
+	})
+
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic")
+		}
+	}()
+
+	evaluator.evaluateActualCalls(
+		[]model.ServiceSpec{
+			{
+				ID:   "unsupported-service",
+				Kind: model.ServiceKind("unsupported"),
+				Mode: model.ServiceModeMocked,
+			},
+		},
+		calls,
+		"execution-1",
+	)
 }
 
 func TestEvaluatorEvaluateExpectedCalls(t *testing.T) {
@@ -359,6 +385,10 @@ func TestEvaluatorEvaluateExpectedCalls(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+
+			reporter := NewMockdeviationReporter(ctrl)
+
 			httpEvaluator := &testCallEvaluator{
 				matches: tt.matches,
 			}
@@ -366,6 +396,7 @@ func TestEvaluatorEvaluateExpectedCalls(t *testing.T) {
 			evaluator := New(
 				httpEvaluator,
 				&testCallEvaluator{},
+				reporter,
 			)
 
 			calls := &call.Store{}
@@ -378,7 +409,10 @@ func TestEvaluatorEvaluateExpectedCalls(t *testing.T) {
 				})
 			}
 
-			result := newTestExecutionResult()
+			if tt.expectedDeviation != nil {
+				reporter.EXPECT().
+					AddDeviation(tt.expectedDeviation)
+			}
 
 			err := evaluator.evaluateExpectedCalls(
 				context.Background(),
@@ -396,40 +430,12 @@ func TestEvaluatorEvaluateExpectedCalls(t *testing.T) {
 					},
 				},
 				calls,
-				result,
+				"execution-1",
 			)
 			if err != nil {
 				t.Fatalf(
 					"evaluateExpectedCalls() error = %v",
 					err,
-				)
-			}
-
-			if tt.expectedDeviation == nil {
-				if len(result.Summary.Deviations) != 0 {
-					t.Fatalf(
-						"expected no deviations, got %+v",
-						result.Summary.Deviations,
-					)
-				}
-
-				return
-			}
-
-			if len(result.Summary.Deviations) != 1 {
-				t.Fatalf(
-					"expected 1 deviation, got %d",
-					len(result.Summary.Deviations),
-				)
-			}
-
-			actual := result.Summary.Deviations[0]
-
-			if actual != *tt.expectedDeviation {
-				t.Errorf(
-					"expected deviation %+v, got %+v",
-					*tt.expectedDeviation,
-					actual,
 				)
 			}
 		})
@@ -441,6 +447,10 @@ func TestEvaluatorEvaluateExpectedCallsError(
 ) {
 	expectedErr := errors.New("match error")
 
+	ctrl := gomock.NewController(t)
+
+	reporter := NewMockdeviationReporter(ctrl)
+
 	httpEvaluator := &testCallEvaluator{
 		matchesErr: expectedErr,
 	}
@@ -448,6 +458,7 @@ func TestEvaluatorEvaluateExpectedCallsError(
 	evaluator := New(
 		httpEvaluator,
 		&testCallEvaluator{},
+		reporter,
 	)
 
 	calls := &call.Store{}
@@ -457,8 +468,6 @@ func TestEvaluatorEvaluateExpectedCallsError(
 		ServiceID:       "service-1",
 		HTTP:            &call.HTTPCall{},
 	})
-
-	result := newTestExecutionResult()
 
 	err := evaluator.evaluateExpectedCalls(
 		context.Background(),
@@ -475,7 +484,7 @@ func TestEvaluatorEvaluateExpectedCallsError(
 			},
 		},
 		calls,
-		result,
+		"execution-1",
 	)
 
 	if !errors.Is(err, expectedErr) {
@@ -496,6 +505,7 @@ func TestEvaluatorMatches(t *testing.T) {
 		expectedHTTPCalls int
 		expectedGRPCCalls int
 		expectedMatch     bool
+		expectedPanic     bool
 	}{
 		{
 			name: "HTTP",
@@ -515,12 +525,16 @@ func TestEvaluatorMatches(t *testing.T) {
 		},
 		{
 			name:          "no protocol",
-			expectedMatch: false,
+			expectedPanic: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+
+			reporter := NewMockdeviationReporter(ctrl)
+
 			httpEvaluator := &testCallEvaluator{
 				matches: true,
 			}
@@ -532,7 +546,25 @@ func TestEvaluatorMatches(t *testing.T) {
 			evaluator := New(
 				httpEvaluator,
 				grpcEvaluator,
+				reporter,
 			)
+
+			if tt.expectedPanic {
+				defer func() {
+					if recover() == nil {
+						t.Fatal("expected panic")
+					}
+				}()
+
+				_, _ = evaluator.matches(
+					context.Background(),
+					&model.ServiceSpec{},
+					call.Call{},
+					tt.expected,
+				)
+
+				return
+			}
 
 			match, err := evaluator.matches(
 				context.Background(),
@@ -579,6 +611,10 @@ func TestEvaluatorMatches(t *testing.T) {
 func TestEvaluatorMatchesError(t *testing.T) {
 	expectedErr := errors.New("match error")
 
+	ctrl := gomock.NewController(t)
+
+	reporter := NewMockdeviationReporter(ctrl)
+
 	httpEvaluator := &testCallEvaluator{
 		matchesErr: expectedErr,
 	}
@@ -586,6 +622,7 @@ func TestEvaluatorMatchesError(t *testing.T) {
 	evaluator := New(
 		httpEvaluator,
 		&testCallEvaluator{},
+		reporter,
 	)
 
 	_, err := evaluator.matches(
@@ -633,13 +670,6 @@ func (e *testCallEvaluator) Deviation(
 	e.deviationCalls++
 
 	return e.deviation
-}
-
-func newTestExecutionResult() *execute.TestExecutionResult {
-	return &execute.TestExecutionResult{
-		ExecutionID: "execution-1",
-		Summary:     &model.TestExecutionSummary{},
-	}
 }
 
 func intPtr(value int) *int {

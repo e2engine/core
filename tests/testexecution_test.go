@@ -431,6 +431,7 @@ func modelTestExecution() *model.TestExecution {
 }
 
 func modelTestExecutionSummary() *model.TestExecutionSummary {
+	bodyJSON := `{"status":"ok"}`
 	return &model.TestExecutionSummary{
 		Request: &model.TestExecutionRequestSummary{
 			HTTP: &model.HTTPRequest{
@@ -441,7 +442,7 @@ func modelTestExecutionSummary() *model.TestExecutionSummary {
 		Response: &model.TestExecutionResponseSummary{
 			HTTP: &model.HTTPResponse{
 				StatusCode: 200,
-				BodyJSON:   `{"status":"ok"}`,
+				BodyJSON:   &bodyJSON,
 			},
 		},
 	}

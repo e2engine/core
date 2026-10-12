@@ -8,13 +8,24 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/e2engine/core/execute"
+	"go.uber.org/mock/gomock"
+
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/pkg/keys"
 )
 
 func TestEvaluatorEvaluateResponse(t *testing.T) {
+	type bodyCall struct {
+		json  bool
+		value string
+	}
+
+	type deviationCall struct {
+		payload   bool
+		deviation model.TestExecutionDeviation
+	}
+
 	tests := []struct {
 		name string
 
@@ -23,10 +34,8 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 		headers nethttp.Header
 		expect  model.HTTPResponse
 
-		expectedBodyJSON string
-		expectedBodyText string
-		expectedHeaders  map[string][]string
-		expected         []model.TestExecutionDeviation
+		bodyCall   *bodyCall
+		deviations []deviationCall
 	}{
 		{
 			name:   "matching status without body expectation",
@@ -42,11 +51,13 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			expect: model.HTTPResponse{
 				StatusCode: nethttp.StatusOK,
 			},
-			expected: []model.TestExecutionDeviation{
+			deviations: []deviationCall{
 				{
-					Field:    "status_code",
-					Expected: "200",
-					Actual:   "404",
+					deviation: model.TestExecutionDeviation{
+						Field:    string(keys.FieldStatusCode),
+						Expected: "200",
+						Actual:   "404",
+					},
 				},
 			},
 		},
@@ -56,9 +67,12 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			body:   `{"name":"test","count":1}`,
 			expect: model.HTTPResponse{
 				StatusCode: nethttp.StatusOK,
-				BodyJSON:   `{"count":1,"name":"test"}`,
+				BodyJSON:   stringPtr(`{"count":1,"name":"test"}`),
 			},
-			expectedBodyJSON: `{"name":"test","count":1}`,
+			bodyCall: &bodyCall{
+				json:  true,
+				value: `{"name":"test","count":1}`,
+			},
 		},
 		{
 			name:   "JSON body mismatch",
@@ -66,14 +80,20 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			body:   `{"name":"actual"}`,
 			expect: model.HTTPResponse{
 				StatusCode: nethttp.StatusOK,
-				BodyJSON:   `{"name":"expected"}`,
+				BodyJSON:   stringPtr(`{"name":"expected"}`),
 			},
-			expectedBodyJSON: `{"name":"actual"}`,
-			expected: []model.TestExecutionDeviation{
+			bodyCall: &bodyCall{
+				json:  true,
+				value: `{"name":"actual"}`,
+			},
+			deviations: []deviationCall{
 				{
-					Field:    string(keys.FieldBodyJSON),
-					Expected: `{"name":"expected"}`,
-					Actual:   `{"name":"actual"}`,
+					payload: true,
+					deviation: model.TestExecutionDeviation{
+						Field:    string(keys.FieldBodyJSON),
+						Expected: `{"name":"expected"}`,
+						Actual:   `{"name":"actual"}`,
+					},
 				},
 			},
 		},
@@ -83,15 +103,20 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			body:   "hello",
 			expect: model.HTTPResponse{
 				StatusCode: nethttp.StatusOK,
-				BodyJSON:   `{"message":"hello"}`,
+				BodyJSON:   stringPtr(`{"message":"hello"}`),
 			},
-			expectedBodyText: "hello",
-			expected: []model.TestExecutionDeviation{
+			bodyCall: &bodyCall{
+				value: "hello",
+			},
+			deviations: []deviationCall{
 				{
-					Field:    string(keys.FieldBodyJSON),
-					Expected: `{"message":"hello"}`,
-					Actual:   "hello",
-					Message:  "response body is not valid JSON",
+					payload: true,
+					deviation: model.TestExecutionDeviation{
+						Field:    string(keys.FieldBodyJSON),
+						Expected: `{"message":"hello"}`,
+						Actual:   "hello",
+						Message:  "response body is not valid JSON",
+					},
 				},
 			},
 		},
@@ -101,19 +126,27 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			body:   `{"actual":true}`,
 			expect: model.HTTPResponse{
 				StatusCode: nethttp.StatusOK,
-				BodyJSON:   `{"expected":true}`,
+				BodyJSON:   stringPtr(`{"expected":true}`),
 			},
-			expectedBodyJSON: `{"actual":true}`,
-			expected: []model.TestExecutionDeviation{
+			bodyCall: &bodyCall{
+				json:  true,
+				value: `{"actual":true}`,
+			},
+			deviations: []deviationCall{
 				{
-					Field:    "status_code",
-					Expected: "200",
-					Actual:   "400",
+					deviation: model.TestExecutionDeviation{
+						Field:    string(keys.FieldStatusCode),
+						Expected: "200",
+						Actual:   "400",
+					},
 				},
 				{
-					Field:    string(keys.FieldBodyJSON),
-					Expected: `{"expected":true}`,
-					Actual:   `{"actual":true}`,
+					payload: true,
+					deviation: model.TestExecutionDeviation{
+						Field:    string(keys.FieldBodyJSON),
+						Expected: `{"expected":true}`,
+						Actual:   `{"actual":true}`,
+					},
 				},
 			},
 		},
@@ -123,9 +156,11 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			body:   "plain text body",
 			expect: model.HTTPResponse{
 				StatusCode: nethttp.StatusOK,
-				Body:       "plain text body",
+				Body:       stringPtr("plain text body"),
 			},
-			expectedBodyText: "plain text body",
+			bodyCall: &bodyCall{
+				value: "plain text body",
+			},
 		},
 		{
 			name:   "mismatched exact text body",
@@ -133,14 +168,19 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			body:   "actual text body",
 			expect: model.HTTPResponse{
 				StatusCode: nethttp.StatusOK,
-				Body:       "expected text body",
+				Body:       stringPtr("expected text body"),
 			},
-			expectedBodyText: "actual text body",
-			expected: []model.TestExecutionDeviation{
+			bodyCall: &bodyCall{
+				value: "actual text body",
+			},
+			deviations: []deviationCall{
 				{
-					Field:    string(keys.FieldBody),
-					Expected: "expected text body",
-					Actual:   "actual text body",
+					payload: true,
+					deviation: model.TestExecutionDeviation{
+						Field:    string(keys.FieldBody),
+						Expected: "expected text body",
+						Actual:   "actual text body",
+					},
 				},
 			},
 		},
@@ -156,9 +196,6 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 					"X-Test": {"value"},
 				},
 			},
-			expectedHeaders: map[string][]string{
-				"X-Test": {"value"},
-			},
 		},
 		{
 			name:   "unexpected header is not persisted",
@@ -173,9 +210,6 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 					"X-Test": {"value"},
 				},
 			},
-			expectedHeaders: map[string][]string{
-				"X-Test": {"value"},
-			},
 		},
 		{
 			name:   "header name is case insensitive",
@@ -188,9 +222,6 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 				Headers: map[string][]string{
 					"x-test": {"value"},
 				},
-			},
-			expectedHeaders: map[string][]string{
-				"x-test": {"value"},
 			},
 		},
 		{
@@ -205,14 +236,13 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 					"X-Test": {"expected"},
 				},
 			},
-			expectedHeaders: map[string][]string{
-				"X-Test": {"actual"},
-			},
-			expected: []model.TestExecutionDeviation{
+			deviations: []deviationCall{
 				{
-					Field:    "headers.X-Test",
-					Expected: "expected",
-					Actual:   "actual",
+					deviation: model.TestExecutionDeviation{
+						Field:    "headers.X-Test",
+						Expected: "expected",
+						Actual:   "actual",
+					},
 				},
 			},
 		},
@@ -228,11 +258,13 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 					"X-Test": {"expected"},
 				},
 			},
-			expected: []model.TestExecutionDeviation{
+			deviations: []deviationCall{
 				{
-					Field:    "headers.X-Test",
-					Expected: "expected",
-					Actual:   "",
+					deviation: model.TestExecutionDeviation{
+						Field:    "headers.X-Test",
+						Expected: "expected",
+						Actual:   "",
+					},
 				},
 			},
 		},
@@ -240,7 +272,10 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			evaluator := NewEvaluator()
+			ctrl := gomock.NewController(t)
+			reporter := NewMockexecutionReporter(ctrl)
+
+			evaluator := NewEvaluator(reporter)
 
 			response := &nethttp.Response{
 				StatusCode: tt.status,
@@ -250,99 +285,46 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 				),
 			}
 
-			result := &execute.TestExecutionResult{
-				Summary: &model.TestExecutionSummary{},
+			reporter.EXPECT().
+				AddHTTPResponseStatus(tt.status)
+
+			reporter.EXPECT().
+				AddHTTPResponseHeaders(tt.headers)
+
+			for _, deviation := range tt.deviations {
+				if deviation.payload {
+					reporter.EXPECT().
+						AddPayloadDeviation(&deviation.deviation)
+				} else {
+					reporter.EXPECT().
+						AddDeviation(&deviation.deviation)
+				}
+			}
+
+			if tt.bodyCall != nil {
+				if tt.bodyCall.json {
+					reporter.EXPECT().
+						AddHTTPResponseBodyJSON(
+							tt.bodyCall.value,
+						)
+				} else {
+					reporter.EXPECT().
+						AddHTTPResponseBody(
+							tt.bodyCall.value,
+						)
+				}
 			}
 
 			err := evaluator.EvaluateResponse(
-				context.Background(),
 				response,
 				&tt.expect,
-				result,
 			)
 			if err != nil {
-				t.Fatalf("EvaluateResponse() error = %v", err)
-			}
-
-			if result.Summary.Response.HTTP == nil {
-				t.Fatal("expected HTTP response summary")
-			}
-
-			actual := result.Summary.Response.HTTP
-
-			if actual.StatusCode != tt.status {
-				t.Errorf(
-					"expected status code %d, got %d",
-					tt.status,
-					actual.StatusCode,
+				t.Fatalf(
+					"EvaluateResponse() error = %v",
+					err,
 				)
 			}
-
-			if actual.BodyJSON != tt.expectedBodyJSON {
-				t.Errorf(
-					"expected JSON body %q, got %q",
-					tt.expectedBodyJSON,
-					actual.BodyJSON,
-				)
-			}
-
-			if actual.Body != tt.expectedBodyText {
-				t.Errorf(
-					"expected text body %q, got %q",
-					tt.expectedBodyText,
-					actual.Body,
-				)
-			}
-
-			if len(actual.Headers) != len(tt.expectedHeaders) {
-				t.Errorf(
-					"expected %d headers, got %d: %+v",
-					len(tt.expectedHeaders),
-					len(actual.Headers),
-					actual.Headers,
-				)
-			}
-
-			for key, expectedValues := range tt.expectedHeaders {
-				actualValues, ok := actual.Headers[key]
-				if !ok {
-					t.Errorf(
-						"expected header %q, got %+v",
-						key,
-						actual.Headers,
-					)
-
-					continue
-				}
-
-				if len(actualValues) != len(expectedValues) {
-					t.Errorf(
-						"expected header %q values %v, got %v",
-						key,
-						expectedValues,
-						actualValues,
-					)
-
-					continue
-				}
-
-				for i := range expectedValues {
-					if actualValues[i] != expectedValues[i] {
-						t.Errorf(
-							"expected header %q value %q, got %q",
-							key,
-							expectedValues[i],
-							actualValues[i],
-						)
-					}
-				}
-			}
-
-			assertDeviations(
-				t,
-				result.Summary.Deviations,
-				tt.expected,
-			)
 		})
 	}
 }
@@ -350,7 +332,10 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 func TestEvaluatorEvaluateResponseReadError(t *testing.T) {
 	expectedErr := errors.New("read error")
 
-	evaluator := NewEvaluator()
+	ctrl := gomock.NewController(t)
+	reporter := NewMockexecutionReporter(ctrl)
+
+	evaluator := NewEvaluator(reporter)
 
 	response := &nethttp.Response{
 		StatusCode: nethttp.StatusOK,
@@ -359,18 +344,18 @@ func TestEvaluatorEvaluateResponseReadError(t *testing.T) {
 		},
 	}
 
-	result := &execute.TestExecutionResult{
-		Summary: &model.TestExecutionSummary{},
-	}
+	reporter.EXPECT().
+		AddHTTPResponseStatus(nethttp.StatusOK)
+
+	reporter.EXPECT().
+		AddHTTPResponseHeaders(nil)
 
 	err := evaluator.EvaluateResponse(
-		context.Background(),
 		response,
 		&model.HTTPResponse{
 			StatusCode: nethttp.StatusOK,
-			BodyJSON:   `{"result":"ok"}`,
+			BodyJSON:   stringPtr(`{"result":"ok"}`),
 		},
-		result,
 	)
 
 	if !errors.Is(err, expectedErr) {
@@ -383,8 +368,6 @@ func TestEvaluatorEvaluateResponseReadError(t *testing.T) {
 }
 
 func TestEvaluatorMatches(t *testing.T) {
-	evaluator := NewEvaluator()
-
 	actual := call.Call{
 		ServiceID: "service-1",
 		HTTP: &call.HTTPCall{
@@ -397,10 +380,12 @@ func TestEvaluatorMatches(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
+		name string
+
 		actual   call.Call
 		expected model.ServiceExpectedCalls
-		match    bool
+
+		match bool
 	}{
 		{
 			name:   "matches",
@@ -410,7 +395,7 @@ func TestEvaluatorMatches(t *testing.T) {
 				HTTP: &model.HTTPRequestPattern{
 					Method:   "POST",
 					Path:     "/users",
-					BodyJSON: `{"name":"Yaroslav"}`,
+					BodyJSON: stringPtr(`{"name":"Yaroslav"}`),
 				},
 			},
 			match: true,
@@ -458,6 +443,11 @@ func TestEvaluatorMatches(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			reporter := NewMockexecutionReporter(ctrl)
+
+			evaluator := NewEvaluator(reporter)
+
 			match, err := evaluator.Matches(
 				context.Background(),
 				&model.ServiceSpec{},
@@ -465,7 +455,10 @@ func TestEvaluatorMatches(t *testing.T) {
 				tt.expected,
 			)
 			if err != nil {
-				t.Fatalf("Matches() error = %v", err)
+				t.Fatalf(
+					"Matches() error = %v",
+					err,
+				)
 			}
 
 			if match != tt.match {
@@ -495,10 +488,12 @@ func TestHTTPCallMatchesExpectation(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
+		name string
+
 		expected model.HTTPRequestPattern
 		body     []byte
-		match    bool
+
+		match bool
 	}{
 		{
 			name:  "empty expectation",
@@ -517,7 +512,9 @@ func TestHTTPCallMatchesExpectation(t *testing.T) {
 					"Content-Type": {"application/json"},
 					"X-Test":       {"one", "two"},
 				},
-				BodyJSON: `{"active":true,"name":"Yaroslav"}`,
+				BodyJSON: stringPtr(
+					`{"active":true,"name":"Yaroslav"}`,
+				),
 			},
 			match: true,
 		},
@@ -577,30 +574,36 @@ func TestHTTPCallMatchesExpectation(t *testing.T) {
 		{
 			name: "JSON body mismatch",
 			expected: model.HTTPRequestPattern{
-				BodyJSON: `{"name":"Other"}`,
+				BodyJSON: stringPtr(
+					`{"name":"Other"}`,
+				),
 			},
 		},
 		{
 			name: "actual body is invalid JSON",
 			expected: model.HTTPRequestPattern{
-				BodyJSON: `{"name":"Yaroslav"}`,
+				BodyJSON: stringPtr(
+					`{"name":"Yaroslav"}`,
+				),
 			},
-			body:  []byte("not-json"),
-			match: false,
+			body: []byte("not-json"),
 		},
 		{
 			name: "exact text body matches",
 			expected: model.HTTPRequestPattern{
-				Body: `{"name":"Yaroslav","active":true}`,
+				Body: stringPtr(
+					`{"name":"Yaroslav","active":true}`,
+				),
 			},
 			match: true,
 		},
 		{
 			name: "exact text body mismatch",
 			expected: model.HTTPRequestPattern{
-				Body: `{"active":true,"name":"Yaroslav"}`,
+				Body: stringPtr(
+					`{"active":true,"name":"Yaroslav"}`,
+				),
 			},
-			match: false,
 		},
 		{
 			name: "query subset matches",
@@ -638,6 +641,20 @@ func TestHTTPCallMatchesExpectation(t *testing.T) {
 			},
 			match: true,
 		},
+		{
+			name: "explicit empty body matches empty body",
+			expected: model.HTTPRequestPattern{
+				Body: stringPtr(""),
+			},
+			body:  []byte{},
+			match: true,
+		},
+		{
+			name: "explicit empty body does not match non-empty body",
+			expected: model.HTTPRequestPattern{
+				Body: stringPtr(""),
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -665,15 +682,20 @@ func TestHTTPCallMatchesExpectation(t *testing.T) {
 }
 
 func TestEvaluatorDeviation(t *testing.T) {
-	evaluator := NewEvaluator()
+	ctrl := gomock.NewController(t)
+	reporter := NewMockexecutionReporter(ctrl)
+
+	evaluator := NewEvaluator(reporter)
 
 	service := &model.ServiceSpec{
 		ID: "service-1",
 	}
 
 	tests := []struct {
-		name     string
-		actual   call.Call
+		name string
+
+		actual call.Call
+
 		expected *model.TestExecutionDeviation
 	}{
 		{
@@ -710,18 +732,22 @@ func TestEvaluatorDeviation(t *testing.T) {
 						Headers: func() nethttp.Header {
 							headers := make(nethttp.Header)
 							headers.Set(
-								string(keys.E2EngineMockMissHeader),
+								string(
+									keys.E2EngineMockMissHeader,
+								),
 								"true",
 							)
+
 							return headers
 						}(),
 					},
 				},
 			},
 			expected: &model.TestExecutionDeviation{
-				Field:   "calls.service-1",
-				Actual:  "POST /users",
-				Message: "mocked service received a request that did not match any fixture",
+				Field:  "calls.service-1",
+				Actual: "POST /users",
+				Message: "mocked service received a request " +
+					"that did not match any fixture",
 			},
 		},
 	}
@@ -773,30 +799,6 @@ func (r *errorReader) Close() error {
 	return nil
 }
 
-func assertDeviations(
-	t *testing.T,
-	actual []model.TestExecutionDeviation,
-	expected []model.TestExecutionDeviation,
-) {
-	t.Helper()
-
-	if len(actual) != len(expected) {
-		t.Fatalf(
-			"expected %d deviations, got %d: %+v",
-			len(expected),
-			len(actual),
-			actual,
-		)
-	}
-
-	for i := range expected {
-		if actual[i] != expected[i] {
-			t.Errorf(
-				"deviation %d: expected %+v, got %+v",
-				i,
-				expected[i],
-				actual[i],
-			)
-		}
-	}
+func stringPtr(value string) *string {
+	return &value
 }

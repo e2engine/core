@@ -53,11 +53,7 @@ type Worker[J Job, R JobExecutionResult] interface {
 }
 
 type ProtocolExecutor interface {
-	Execute(
-		ctx context.Context,
-		job *TestJob,
-		result *TestExecutionResult,
-	) error
+	Execute(ctx context.Context, job *TestJob) error
 }
 
 type TestExecutionResult struct {

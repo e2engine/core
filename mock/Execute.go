@@ -42,15 +42,15 @@ func (m *MockProtocolExecutor) EXPECT() *MockProtocolExecutorMockRecorder {
 }
 
 // Execute mocks base method.
-func (m *MockProtocolExecutor) Execute(ctx context.Context, job *execute.TestJob, result *execute.TestExecutionResult) error {
+func (m *MockProtocolExecutor) Execute(ctx context.Context, job *execute.TestJob) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Execute", ctx, job, result)
+	ret := m.ctrl.Call(m, "Execute", ctx, job)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Execute indicates an expected call of Execute.
-func (mr *MockProtocolExecutorMockRecorder) Execute(ctx, job, result any) *gomock.Call {
+func (mr *MockProtocolExecutorMockRecorder) Execute(ctx, job any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Execute", reflect.TypeOf((*MockProtocolExecutor)(nil).Execute), ctx, job, result)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Execute", reflect.TypeOf((*MockProtocolExecutor)(nil).Execute), ctx, job)
 }

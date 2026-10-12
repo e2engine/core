@@ -51,8 +51,11 @@ var (
 	GRPCFieldType            = grpc("field.type")
 	GRPCServiceTargetAddress = grpc("service.target.address")
 
-	FieldBody     = keys.New("body")
-	FieldBodyJSON = keys.New("body.json")
+	FieldBody       = keys.New("body")
+	FieldBodyJSON   = keys.New("body_json")
+	FieldStatusCode = keys.New("status_code")
+	FieldStatus     = keys.New("status")
+	FieldMessage    = keys.New("message")
 
 	ExecutionID                  = execution("id")
 	ExecutionStatus              = execution("status")

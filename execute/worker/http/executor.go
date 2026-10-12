@@ -15,22 +15,24 @@ import (
 type TestExecutor struct {
 	client    *http.Client
 	evaluator *Evaluator
+	reporter  executionReporter
 }
 
 func NewTestExecutor(
 	client *http.Client,
 	evaluator *Evaluator,
+	reporter executionReporter,
 ) *TestExecutor {
 	return &TestExecutor{
 		client:    client,
 		evaluator: evaluator,
+		reporter:  reporter,
 	}
 }
 
 func (e *TestExecutor) Execute(
 	ctx context.Context,
 	job *execute.TestJob,
-	result *execute.TestExecutionResult,
 ) error {
 	req, err := buildHTTPRequest(
 		ctx,
@@ -40,6 +42,8 @@ func (e *TestExecutor) Execute(
 	if err != nil {
 		return err
 	}
+
+	e.reporter.AddHTTPRequest(req)
 
 	resp, err := doHTTPRequest(
 		e.client,
@@ -51,10 +55,8 @@ func (e *TestExecutor) Execute(
 	defer resp.Body.Close()
 
 	if err := e.evaluator.EvaluateResponse(
-		ctx,
 		resp,
 		job.Test.Spec.Expect.HTTP,
-		result,
 	); err != nil {
 		return err
 	}

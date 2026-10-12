@@ -1,10 +1,9 @@
-package evaluate
+package evaluator
 
 import (
 	"context"
 	"strconv"
 
-	"github.com/e2engine/core/execute"
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/model"
 )
@@ -28,15 +27,18 @@ type CallEvaluator interface {
 type Evaluator struct {
 	httpCallEvaluator CallEvaluator
 	grpcCallEvaluator CallEvaluator
+	reporter          deviationReporter
 }
 
 func New(
 	httpCallEvaluator CallEvaluator,
 	grpcCallEvaluator CallEvaluator,
+	reporter deviationReporter,
 ) *Evaluator {
 	return &Evaluator{
 		httpCallEvaluator: httpCallEvaluator,
 		grpcCallEvaluator: grpcCallEvaluator,
+		reporter:          reporter,
 	}
 }
 
@@ -45,7 +47,7 @@ func (e *Evaluator) EvaluateCalls(
 	services []model.ServiceSpec,
 	expectedCalls []model.ServiceExpectedCalls,
 	calls call.Reader,
-	result *execute.TestExecutionResult,
+	executionID string,
 ) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -54,7 +56,7 @@ func (e *Evaluator) EvaluateCalls(
 	e.evaluateActualCalls(
 		services,
 		calls,
-		result,
+		executionID,
 	)
 
 	return e.evaluateExpectedCalls(
@@ -62,14 +64,14 @@ func (e *Evaluator) EvaluateCalls(
 		services,
 		expectedCalls,
 		calls,
-		result,
+		executionID,
 	)
 }
 
 func (e *Evaluator) evaluateActualCalls(
 	services []model.ServiceSpec,
 	calls call.Reader,
-	result *execute.TestExecutionResult,
+	executionID string,
 ) {
 	for i := range services {
 		service := services[i]
@@ -79,7 +81,7 @@ func (e *Evaluator) evaluateActualCalls(
 		}
 
 		filter := call.Filter{
-			TestExecutionID: result.ExecutionID,
+			TestExecutionID: executionID,
 			ServiceID:       service.ID,
 		}
 		for _, actual := range calls.Get(filter) {
@@ -90,16 +92,16 @@ func (e *Evaluator) evaluateActualCalls(
 
 			case model.ServiceKindGRPC:
 				deviation = e.grpcCallEvaluator.Deviation(&service, actual)
+
+			default:
+				panic("invalid service spec: unsupported service kind")
 			}
 
 			if deviation == nil {
 				continue
 			}
 
-			result.Summary.Deviations = append(
-				result.Summary.Deviations,
-				*deviation,
-			)
+			e.reporter.AddDeviation(deviation)
 		}
 	}
 }
@@ -109,7 +111,7 @@ func (e *Evaluator) evaluateExpectedCalls(
 	services []model.ServiceSpec,
 	expectedCalls []model.ServiceExpectedCalls,
 	calls call.Reader,
-	result *execute.TestExecutionResult,
+	executionID string,
 ) error {
 	serviceByID := make(map[string]*model.ServiceSpec, len(services))
 	for i := range services {
@@ -120,7 +122,7 @@ func (e *Evaluator) evaluateExpectedCalls(
 		service := serviceByID[expected.ServiceID]
 
 		filter := call.Filter{
-			TestExecutionID: result.ExecutionID,
+			TestExecutionID: executionID,
 			ServiceID:       expected.ServiceID,
 		}
 		actualCalls := calls.Get(filter)
@@ -145,28 +147,22 @@ func (e *Evaluator) evaluateExpectedCalls(
 
 		if expected.Count != nil {
 			if matched != *expected.Count {
-				result.Summary.Deviations = append(
-					result.Summary.Deviations,
-					model.TestExecutionDeviation{
-						Field:    "calls." + expected.ServiceID + ".count",
-						Expected: strconv.Itoa(*expected.Count),
-						Actual:   strconv.Itoa(matched),
-					},
-				)
+				e.reporter.AddDeviation(&model.TestExecutionDeviation{
+					Field:    "calls." + expected.ServiceID + ".count",
+					Expected: strconv.Itoa(*expected.Count),
+					Actual:   strconv.Itoa(matched),
+				})
 			}
 
 			continue
 		}
 
 		if matched == 0 {
-			result.Summary.Deviations = append(
-				result.Summary.Deviations,
-				model.TestExecutionDeviation{
-					Field:    "calls." + expected.ServiceID + ".count",
-					Expected: "at least 1",
-					Actual:   "0",
-				},
-			)
+			e.reporter.AddDeviation(&model.TestExecutionDeviation{
+				Field:    "calls." + expected.ServiceID + ".count",
+				Expected: "at least 1",
+				Actual:   "0",
+			})
 		}
 	}
 
@@ -197,6 +193,6 @@ func (e *Evaluator) matches(
 		)
 
 	default:
-		return false, nil
+		panic("invalid expected call: unsupported protocol")
 	}
 }

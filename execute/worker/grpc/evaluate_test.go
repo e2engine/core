@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -16,7 +17,6 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/dynamicpb"
 
-	"github.com/e2engine/core/execute"
 	"github.com/e2engine/core/execute/call"
 	servicegrpc "github.com/e2engine/core/execute/runtime/service/grpc"
 	"github.com/e2engine/core/model"
@@ -33,10 +33,10 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 		message map[string]any
 		expect  model.GRPCResponse
 
-		expectedStatus     string
-		expectedMetadata   map[string][]string
-		expectedMessage    map[string]any
-		expectedDeviations []model.TestExecutionDeviation
+		expectedStatus string
+
+		expectedDeviations        []model.TestExecutionDeviation
+		expectedPayloadDeviations []model.TestExecutionDeviation
 	}{
 		{
 			name: "matching response",
@@ -66,25 +66,16 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 						"trailer-value",
 					},
 				},
-				Message: map[string]any{
-					"name": "actual",
-				},
+				Message: mapPtr(
+					map[string]any{
+						"name": "actual",
+					},
+				),
 			},
 			expectedStatus: "OK",
-			expectedMetadata: map[string][]string{
-				"x-header": {
-					"header-value",
-				},
-				"x-trailer": {
-					"trailer-value",
-				},
-			},
-			expectedMessage: map[string]any{
-				"name": "actual",
-			},
 		},
 		{
-			name: "unrelated metadata is not persisted",
+			name: "unrelated metadata",
 			header: metadata.MD{
 				"x-header": {
 					"header-value",
@@ -102,9 +93,6 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 				Status: "OK",
 			},
 			expectedStatus: "OK",
-			expectedMessage: map[string]any{
-				"name": "actual",
-			},
 		},
 		{
 			name: "metadata mismatch",
@@ -125,14 +113,6 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 				},
 			},
 			expectedStatus: "OK",
-			expectedMetadata: map[string][]string{
-				"x-header": {
-					"actual",
-				},
-			},
-			expectedMessage: map[string]any{
-				"name": "actual",
-			},
 			expectedDeviations: []model.TestExecutionDeviation{
 				{
 					Field:    "metadata.x-header",
@@ -155,9 +135,6 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 				},
 			},
 			expectedStatus: "OK",
-			expectedMessage: map[string]any{
-				"name": "actual",
-			},
 			expectedDeviations: []model.TestExecutionDeviation{
 				{
 					Field:    "metadata.x-header",
@@ -179,9 +156,6 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 				Status: "OK",
 			},
 			expectedStatus: "NotFound",
-			expectedMessage: map[string]any{
-				"name": "actual",
-			},
 			expectedDeviations: []model.TestExecutionDeviation{
 				{
 					Field:    "status",
@@ -197,15 +171,14 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			},
 			expect: model.GRPCResponse{
 				Status: "OK",
-				Message: map[string]any{
-					"name": "expected",
-				},
+				Message: mapPtr(
+					map[string]any{
+						"name": "expected",
+					},
+				),
 			},
 			expectedStatus: "OK",
-			expectedMessage: map[string]any{
-				"name": "actual",
-			},
-			expectedDeviations: []model.TestExecutionDeviation{
+			expectedPayloadDeviations: []model.TestExecutionDeviation{
 				{
 					Field:    "message",
 					Expected: `{"name":"expected"}`,
@@ -222,33 +195,72 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 				Status: "OK",
 			},
 			expectedStatus: "OK",
-			expectedMessage: map[string]any{
-				"name": "actual",
+		},
+		{
+			name:    "explicit empty message",
+			message: map[string]any{},
+			expect: model.GRPCResponse{
+				Status: "OK",
+				Message: mapPtr(
+					map[string]any{},
+				),
 			},
+			expectedStatus: "OK",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			reporter := NewMockexecutionReporter(ctrl)
+
+			evaluator := newTestEvaluator(reporter)
+
 			response := newTestMessage(
 				t,
 				tt.message,
 			)
 
-			result := &execute.TestExecutionResult{
-				Summary: &model.TestExecutionSummary{},
+			reporter.EXPECT().
+				AddGRPCResponseStatus(
+					tt.expectedStatus,
+				)
+
+			for i := range tt.expectedDeviations {
+				reporter.EXPECT().
+					AddDeviation(
+						&tt.expectedDeviations[i],
+					)
 			}
 
-			evaluator := newTestEvaluator()
+			expectedMetadata := mergeMetadata(
+				tt.header,
+				tt.trailer,
+			)
+
+			reporter.EXPECT().
+				AddGRPCResponseMetadata(
+					expectedMetadata,
+				)
+
+			reporter.EXPECT().
+				AddGRPCResponseMessage(
+					tt.message,
+				)
+
+			for i := range tt.expectedPayloadDeviations {
+				reporter.EXPECT().
+					AddPayloadDeviation(
+						&tt.expectedPayloadDeviations[i],
+					)
+			}
 
 			err := evaluator.EvaluateResponse(
-				context.Background(),
 				tt.callErr,
 				response,
 				tt.header,
 				tt.trailer,
 				&tt.expect,
-				result,
 			)
 			if err != nil {
 				t.Fatalf(
@@ -256,101 +268,22 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 					err,
 				)
 			}
-
-			actual := result.Summary.Response.GRPC
-			if actual == nil {
-				t.Fatal(
-					"expected gRPC response summary",
-				)
-			}
-
-			if actual.Status != tt.expectedStatus {
-				t.Errorf(
-					"expected status %q, got %q",
-					tt.expectedStatus,
-					actual.Status,
-				)
-			}
-
-			if !reflect.DeepEqual(
-				actual.Metadata,
-				tt.expectedMetadata,
-			) {
-				t.Errorf(
-					"expected metadata %#v, got %#v",
-					tt.expectedMetadata,
-					actual.Metadata,
-				)
-			}
-
-			if !reflect.DeepEqual(
-				actual.Message,
-				tt.expectedMessage,
-			) {
-				t.Errorf(
-					"expected message %#v, got %#v",
-					tt.expectedMessage,
-					actual.Message,
-				)
-			}
-
-			assertGRPCDeviations(
-				t,
-				result.Summary.Deviations,
-				tt.expectedDeviations,
-			)
 		})
-	}
-}
-
-func TestEvaluatorEvaluateResponseCancelledContext(
-	t *testing.T,
-) {
-	ctx, cancel := context.WithCancel(
-		context.Background(),
-	)
-	cancel()
-
-	result := &execute.TestExecutionResult{
-		Summary: &model.TestExecutionSummary{},
-	}
-
-	evaluator := newTestEvaluator()
-
-	err := evaluator.EvaluateResponse(
-		ctx,
-		nil,
-		newTestMessage(
-			t,
-			map[string]any{},
-		),
-		nil,
-		nil,
-		&model.GRPCResponse{
-			Status: "OK",
-		},
-		result,
-	)
-
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf(
-			"expected context.Canceled, got %v",
-			err,
-		)
 	}
 }
 
 func TestEvaluatorEvaluateResponseUnknownStatus(
 	t *testing.T,
 ) {
-	result := &execute.TestExecutionResult{
-		Summary: &model.TestExecutionSummary{},
-	}
+	ctrl := gomock.NewController(t)
+	reporter := NewMockexecutionReporter(ctrl)
 
-	evaluator := newTestEvaluator()
+	evaluator := newTestEvaluator(reporter)
+
+	reporter.EXPECT().
+		AddGRPCResponseStatus("OK")
 
 	err := evaluator.EvaluateResponse(
-		context.Background(),
 		nil,
 		newTestMessage(
 			t,
@@ -361,7 +294,6 @@ func TestEvaluatorEvaluateResponseUnknownStatus(
 		&model.GRPCResponse{
 			Status: "invalid",
 		},
-		result,
 	)
 
 	if !errors.Is(err, ErrUnknownStatus) {
@@ -406,8 +338,6 @@ func TestEvaluatorMatches(t *testing.T) {
 		)
 	}
 
-	evaluator := NewEvaluator(resolver)
-
 	actual := call.Call{
 		ServiceID: "service-1",
 		GRPC: &call.GRPCCall{
@@ -445,9 +375,11 @@ func TestEvaluatorMatches(t *testing.T) {
 							"request-1",
 						},
 					},
-					Message: map[string]any{
-						"name": "Yaroslav",
-					},
+					Message: mapPtr(
+						map[string]any{
+							"name": "Yaroslav",
+						},
+					),
 				},
 			},
 			match: true,
@@ -534,9 +466,11 @@ func TestEvaluatorMatches(t *testing.T) {
 				GRPC: &model.GRPCRequestPattern{
 					Service: "users.UserService",
 					Method:  "Create",
-					Message: map[string]any{
-						"name": "Other",
-					},
+					Message: mapPtr(
+						map[string]any{
+							"name": "Other",
+						},
+					),
 				},
 			},
 		},
@@ -552,10 +486,32 @@ func TestEvaluatorMatches(t *testing.T) {
 			},
 			match: true,
 		},
+		{
+			name:   "explicit empty message does not match",
+			actual: actual,
+			expected: model.ServiceExpectedCalls{
+				ServiceID: "service-1",
+				GRPC: &model.GRPCRequestPattern{
+					Service: "users.UserService",
+					Method:  "Create",
+					Message: mapPtr(
+						map[string]any{},
+					),
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			reporter := NewMockexecutionReporter(ctrl)
+
+			evaluator := NewEvaluator(
+				resolver,
+				reporter,
+			)
+
 			match, err := evaluator.Matches(
 				context.Background(),
 				service,
@@ -583,8 +539,11 @@ func TestEvaluatorMatches(t *testing.T) {
 func TestEvaluatorMatchesMissingMethod(
 	t *testing.T,
 ) {
+	ctrl := gomock.NewController(t)
+	reporter := NewMockexecutionReporter(ctrl)
+
 	service := testServiceSpec()
-	evaluator := newTestEvaluator()
+	evaluator := newTestEvaluator(reporter)
 
 	actual := call.Call{
 		ServiceID: "service-1",
@@ -601,9 +560,11 @@ func TestEvaluatorMatchesMissingMethod(
 		GRPC: &model.GRPCRequestPattern{
 			Service: "users.UserService",
 			Method:  "Missing",
-			Message: map[string]any{
-				"name": "Yaroslav",
-			},
+			Message: mapPtr(
+				map[string]any{
+					"name": "Yaroslav",
+				},
+			),
 		},
 	}
 
@@ -626,8 +587,11 @@ func TestEvaluatorMatchesMissingMethod(
 func TestEvaluatorMatchesInvalidCapturedMessage(
 	t *testing.T,
 ) {
+	ctrl := gomock.NewController(t)
+	reporter := NewMockexecutionReporter(ctrl)
+
 	service := testServiceSpec()
-	evaluator := newTestEvaluator()
+	evaluator := newTestEvaluator(reporter)
 
 	actual := call.Call{
 		ServiceID: "service-1",
@@ -645,9 +609,11 @@ func TestEvaluatorMatchesInvalidCapturedMessage(
 		GRPC: &model.GRPCRequestPattern{
 			Service: "users.UserService",
 			Method:  "Create",
-			Message: map[string]any{
-				"name": "Yaroslav",
-			},
+			Message: mapPtr(
+				map[string]any{
+					"name": "Yaroslav",
+				},
+			),
 		},
 	}
 
@@ -670,7 +636,10 @@ func TestEvaluatorMatchesInvalidCapturedMessage(
 }
 
 func TestEvaluatorDeviation(t *testing.T) {
-	evaluator := newTestEvaluator()
+	ctrl := gomock.NewController(t)
+	reporter := NewMockexecutionReporter(ctrl)
+
+	evaluator := newTestEvaluator(reporter)
 
 	service := testServiceSpec()
 
@@ -1011,9 +980,12 @@ func TestGRPCCodeUnknown(t *testing.T) {
 	}
 }
 
-func newTestEvaluator() *Evaluator {
+func newTestEvaluator(
+	reporter executionReporter,
+) *Evaluator {
 	return NewEvaluator(
 		servicegrpc.NewProtoMethodResolver(nil),
+		reporter,
 	)
 }
 
@@ -1153,30 +1125,8 @@ func newMapMessage(
 	return message
 }
 
-func assertGRPCDeviations(
-	t *testing.T,
-	actual []model.TestExecutionDeviation,
-	expected []model.TestExecutionDeviation,
-) {
-	t.Helper()
-
-	if len(actual) != len(expected) {
-		t.Fatalf(
-			"expected %d deviations, got %d: %+v",
-			len(expected),
-			len(actual),
-			actual,
-		)
-	}
-
-	for i := range expected {
-		if actual[i] != expected[i] {
-			t.Errorf(
-				"deviation %d: expected %+v, got %+v",
-				i,
-				expected[i],
-				actual[i],
-			)
-		}
-	}
+func mapPtr(
+	value map[string]any,
+) *map[string]any {
+	return &value
 }

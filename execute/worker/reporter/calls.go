@@ -1,4 +1,4 @@
-package evaluate
+package reporter
 
 import (
 	"sort"
@@ -21,7 +21,7 @@ type grpcObservedCallKey struct {
 	ResponseStatus string
 }
 
-func SummarizeCalls(
+func summarizeCalls(
 	executionID string,
 	calls call.Reader,
 ) []model.ServiceObservedCalls {

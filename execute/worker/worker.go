@@ -8,11 +8,11 @@ import (
 	"github.com/ygrebnov/errorc"
 
 	"github.com/e2engine/core/execute"
-	"github.com/e2engine/core/execute/call"
-	"github.com/e2engine/core/execute/evaluate"
 	grpcservice "github.com/e2engine/core/execute/runtime/service/grpc"
+	evaluatorPkg "github.com/e2engine/core/execute/worker/evaluator"
 	grpcworker "github.com/e2engine/core/execute/worker/grpc"
 	httpworker "github.com/e2engine/core/execute/worker/http"
+	reporterPkg "github.com/e2engine/core/execute/worker/reporter"
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/pkg/errors"
 	"github.com/e2engine/core/pkg/keys"
@@ -23,51 +23,29 @@ type Worker struct {
 	cfg    *Config
 	logger log.Logger
 
-	httpExecutor execute.ProtocolExecutor
-	grpcExecutor execute.ProtocolExecutor
-	evaluator    *evaluate.Evaluator
+	client             *http.Client
+	grpcMethodResolver grpcservice.MethodResolver
 }
 
 type Config struct {
-	TestTimeout time.Duration `json:"test_timeout" yaml:"test_timeout" default:"30s"` // TODO: add validation.
+	TestTimeout time.Duration       `json:"test_timeout" yaml:"test_timeout" default:"30s" validate:"min(1s)"`
+	Reporter    *reporterPkg.Config `json:"reporter" yaml:"reporter" validateElem:"omitempty"`
 }
 
 func NewWorker(
 	cfg *Config,
 	logger log.Logger,
 	grpcMethodResolver grpcservice.MethodResolver,
-) (*Worker, error) {
+) *Worker {
 	client := http.DefaultClient // TODO: make it configurable.
-
-	httpEvaluator := httpworker.NewEvaluator()
-
-	grpcEvaluator := grpcworker.NewEvaluator(
-		grpcMethodResolver,
-	)
-
-	evaluator := evaluate.New(
-		httpEvaluator,
-		grpcEvaluator,
-	)
-
-	httpExecutor := httpworker.NewTestExecutor(
-		client,
-		httpEvaluator,
-	)
-
-	grpcExecutor := grpcworker.NewTestExecutor(
-		grpcMethodResolver,
-		grpcEvaluator,
-	)
 
 	return &Worker{
 		cfg:    cfg,
 		logger: logger,
 
-		httpExecutor: httpExecutor,
-		grpcExecutor: grpcExecutor,
-		evaluator:    evaluator,
-	}, nil
+		client:             client,
+		grpcMethodResolver: grpcMethodResolver,
+	}
 }
 
 func (w *Worker) Execute(
@@ -80,88 +58,98 @@ func (w *Worker) Execute(
 	)
 	defer cancel()
 
-	executor, err := w.getExecutor(&job.Test.Spec)
-	if err != nil {
-		return nil, err
+	reporterCfg := w.cfg.Reporter
+	if reporterCfg == nil {
+		reporterCfg = &reporterPkg.Config{}
+	}
+	reporter := reporterPkg.New(
+		reporterCfg,
+		&job.Test.Spec,
+		job.ExecutionID,
+		job.TestSuiteExecutionID,
+	)
+
+	// In some cases this validation can be the second validation of the test spec,
+	// but it is better than failing the test execution because of an invalid test spec.
+	if err := job.Test.Validate(runCtx); err != nil {
+		reporter.SetError(err)
+
+		return reporter.Result(), nil
+	}
+
+	httpEvaluator := httpworker.NewEvaluator(reporter)
+
+	grpcEvaluator := grpcworker.NewEvaluator(
+		w.grpcMethodResolver,
+		reporter,
+	)
+
+	evaluator := evaluatorPkg.New(
+		httpEvaluator,
+		grpcEvaluator,
+		reporter,
+	)
+
+	var executor execute.ProtocolExecutor
+	switch {
+	case job.Test.Spec.Request.HTTP != nil:
+		executor = httpworker.NewTestExecutor(
+			w.client,
+			httpEvaluator,
+			reporter,
+		)
+
+	case job.Test.Spec.Request.GRPC != nil:
+		executor = grpcworker.NewTestExecutor(
+			w.grpcMethodResolver,
+			grpcEvaluator,
+			reporter,
+		)
+
+	default:
+		// Test validation guarantees a supported request protocol.
+		panic("invalid test spec: unsupported test protocol")
 	}
 
 	callStore := job.Runtime.Calls
-
-	result := &execute.TestExecutionResult{
-		ExecutionID:          job.ExecutionID,
-		TestSuiteExecutionID: job.TestSuiteExecutionID,
-		Summary:              newSummary(&job.Test.Spec),
-	}
 
 	if errValidate := validateExpectedCalls(
 		job.Environment.Spec.Services,
 		job.Test.Spec.Expect.Calls,
 	); errValidate != nil {
-		setExecutionError(result, errValidate)
+		reporter.SetError(errValidate)
 
-		return result, nil
+		return reporter.Result(), nil
 	}
 
 	if err := executor.Execute(
 		runCtx,
 		&job,
-		result,
 	); err != nil {
-		summarizeCalls(result, callStore)
-		setExecutionError(result, err)
+		reporter.SummarizeCalls(callStore)
+		reporter.SetError(err)
 
-		return result, nil
+		return reporter.Result(), nil
 	}
 
-	if err := w.evaluator.EvaluateCalls(
+	if err := evaluator.EvaluateCalls(
 		runCtx,
 		job.Environment.Spec.Services,
 		job.Test.Spec.Expect.Calls,
 		callStore,
-		result,
+		job.ExecutionID,
 	); err != nil {
-		summarizeCalls(result, callStore)
-		setExecutionError(result, err)
+		reporter.SummarizeCalls(callStore)
+		reporter.SetError(err)
 
-		return result, nil
+		return reporter.Result(), nil
 	}
 
-	summarizeCalls(result, callStore)
+	reporter.SummarizeCalls(callStore)
 
-	if len(result.Summary.Deviations) == 0 {
-		result.Status = model.ExecutionStatusPassed
-	} else {
-		result.Status = model.ExecutionStatusFailed
-	}
+	reporter.Finalize()
 
-	result.FinishedAt = time.Now().UTC()
-
-	return result, nil
-}
-
-func summarizeCalls(
-	result *execute.TestExecutionResult,
-	callStore call.Reader,
-) {
-	result.Summary.Calls = evaluate.SummarizeCalls(
-		result.ExecutionID,
-		callStore,
-	)
-}
-
-func (w *Worker) getExecutor(
-	spec *model.TestSpec,
-) (execute.ProtocolExecutor, error) {
-	switch {
-	case spec.Request.HTTP != nil:
-		return w.httpExecutor, nil
-
-	case spec.Request.GRPC != nil:
-		return w.grpcExecutor, nil
-
-	default:
-		return nil, errors.ErrUnsupportedTestProtocol
-	}
+	return reporter.Result(), nil
 }
 
 func validateExpectedCalls(
@@ -229,13 +217,4 @@ func validateExpectedCalls(
 	}
 
 	return nil
-}
-
-func setExecutionError(
-	result *execute.TestExecutionResult,
-	err error,
-) {
-	result.Status = model.ExecutionStatusError
-	result.FinishedAt = time.Now().UTC()
-	result.Summary.Error = err.Error()
 }

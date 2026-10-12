@@ -121,7 +121,9 @@ func (s *MockHTTPService) ServeHTTP(
 	s.respond(w, fixture)
 }
 
-func (s *MockHTTPService) match(r *http.Request) (*Fixture, error) {
+func (s *MockHTTPService) match(
+	r *http.Request,
+) (*Fixture, error) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		s.logger.Error(
@@ -140,16 +142,24 @@ func (s *MockHTTPService) match(r *http.Request) (*Fixture, error) {
 	}
 
 	for i := range s.fixtures {
-		if s.fixtures[i].method == r.Method &&
-			s.fixtures[i].path == r.URL.Path &&
-			areQueryParamsEqual(s.fixtures[i].query, r.URL.Query()) &&
-			areHeadersEqual(s.fixtures[i].headers, r.Header) &&
+		fixture := &s.fixtures[i]
+
+		if fixture.method == r.Method &&
+			fixture.path == r.URL.Path &&
+			areQueryParamsEqual(
+				fixture.query,
+				r.URL.Query(),
+			) &&
+			areHeadersEqual(
+				fixture.headers,
+				r.Header,
+			) &&
 			isBodyEqual(
-				s.fixtures[i].body,
-				s.fixtures[i].bodyJSON,
+				fixture.body,
+				fixture.bodyJSON,
 				body,
 			) {
-			return &s.fixtures[i], nil
+			return fixture, nil
 		}
 	}
 
@@ -157,18 +167,18 @@ func (s *MockHTTPService) match(r *http.Request) (*Fixture, error) {
 }
 
 func isBodyEqual(
-	expectedBody string,
-	expectedBodyJSON string,
+	expectedBody *string,
+	expectedBodyJSON *string,
 	actual []byte,
 ) bool {
-	if expectedBody != "" {
-		return expectedBody == string(actual)
+	if expectedBody != nil {
+		return *expectedBody == string(actual)
 	}
 
-	if expectedBodyJSON != "" {
+	if expectedBodyJSON != nil {
 		var expectedValue any
 		if err := json.Unmarshal(
-			[]byte(expectedBodyJSON),
+			[]byte(*expectedBodyJSON),
 			&expectedValue,
 		); err != nil {
 			return false
@@ -188,7 +198,7 @@ func isBodyEqual(
 		)
 	}
 
-	return len(actual) == 0
+	return true
 }
 
 func areHeadersEqual(expected, actual http.Header) bool {
@@ -268,8 +278,8 @@ type Fixture struct {
 	query   url.Values
 	headers map[string][]string
 
-	body     string
-	bodyJSON string
+	body     *string
+	bodyJSON *string
 
 	status          int
 	responseHeaders map[string][]string
@@ -292,22 +302,34 @@ func compileFixtures(
 			spec.When.HTTP.Path,
 		)
 
-		fixtures[i] = Fixture{
+		fixture := Fixture{
 			method:  spec.When.HTTP.Method,
 			path:    u.Path,
 			query:   u.Query(),
 			headers: spec.When.HTTP.Headers,
 
-			body:     spec.When.HTTP.Body,
-			bodyJSON: spec.When.HTTP.BodyJSON,
-
 			status: spec.Then.HTTP.StatusCode,
 
 			responseHeaders: spec.Then.HTTP.Headers,
-
-			responseBody:     spec.Then.HTTP.Body,
-			responseBodyJSON: spec.Then.HTTP.BodyJSON,
 		}
+
+		if spec.When.HTTP.Body != nil {
+			fixture.body = spec.When.HTTP.Body
+		}
+
+		if spec.When.HTTP.BodyJSON != nil {
+			fixture.bodyJSON = spec.When.HTTP.BodyJSON
+		}
+
+		if spec.Then.HTTP.Body != nil {
+			fixture.responseBody = *spec.Then.HTTP.Body
+		}
+
+		if spec.Then.HTTP.BodyJSON != nil {
+			fixture.responseBodyJSON = *spec.Then.HTTP.BodyJSON
+		}
+
+		fixtures[i] = fixture
 	}
 
 	return fixtures

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"net/url"
 	"strings"
 
@@ -52,12 +53,14 @@ func (h *HTTPRequest) Validate() error {
 // HTTPRequestPattern is used to match an HTTP request against a pattern.
 // Unlike HTTPRequest, it does not describe an outgoing request.
 type HTTPRequestPattern struct {
-	Method   string              `json:"method" yaml:"method" validate:"oneof(GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD)"`
-	Path     string              `json:"path" yaml:"path" validate:"min(1)"`
-	Query    map[string][]string `json:"query,omitempty" yaml:"query,omitempty"`
-	Headers  map[string][]string `json:"headers,omitempty" yaml:"headers,omitempty"`
-	Body     string              `json:"body,omitempty" yaml:"body,omitempty"`
-	BodyJSON string              `json:"body_json,omitempty" yaml:"body_json,omitempty" validate:"omitempty,validjson"`
+	Method  string              `json:"method" yaml:"method" validate:"oneof(GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD)"`
+	Path    string              `json:"path" yaml:"path" validate:"min(1)"`
+	Query   map[string][]string `json:"query,omitempty" yaml:"query,omitempty"`
+	Headers map[string][]string `json:"headers,omitempty" yaml:"headers,omitempty"`
+	// Body is pointer to string to distinguish between empty body and no body.
+	// body: "" means empty body, while no body field means "will be skipped in matching".
+	Body     *string `json:"body,omitempty" yaml:"body,omitempty"`
+	BodyJSON *string `json:"body_json,omitempty" yaml:"body_json,omitempty"`
 }
 
 func (h *HTTPRequestPattern) Validate() error {
@@ -69,9 +72,15 @@ func (h *HTTPRequestPattern) Validate() error {
 		return errorc.New("invalid HTTP request path")
 	}
 
-	if h.Body != "" && h.BodyJSON != "" {
+	if h.Body != nil && h.BodyJSON != nil {
 		return errorc.New(
 			"HTTP request pattern cannot have both body and body_json set",
+		)
+	}
+
+	if h.BodyJSON != nil && !json.Valid([]byte(*h.BodyJSON)) {
+		return errorc.New(
+			"HTTP response body_json is not valid JSON",
 		)
 	}
 
@@ -81,14 +90,22 @@ func (h *HTTPRequestPattern) Validate() error {
 type HTTPResponse struct {
 	StatusCode int                 `json:"status_code" yaml:"status_code" validate:"min(100),max(599)"`
 	Headers    map[string][]string `json:"headers,omitempty" yaml:"headers,omitempty"`
-	Body       string              `json:"body,omitempty" yaml:"body,omitempty"`
-	BodyJSON   string              `json:"body_json,omitempty" yaml:"body_json,omitempty" validate:"omitempty,validjson"`
+	// Body is pointer to string to distinguish between empty body and no body.
+	// body: "" means empty body, while no body field means "will be skipped in matching".
+	Body     *string `json:"body,omitempty" yaml:"body,omitempty"`
+	BodyJSON *string `json:"body_json,omitempty" yaml:"body_json,omitempty"`
 }
 
 func (h *HTTPResponse) Validate() error {
-	if h.Body != "" && h.BodyJSON != "" {
+	if h.Body != nil && h.BodyJSON != nil {
 		return errorc.New(
 			"HTTP response cannot have both body and body_json set",
+		)
+	}
+
+	if h.BodyJSON != nil && !json.Valid([]byte(*h.BodyJSON)) {
+		return errorc.New(
+			"HTTP response body_json is not valid JSON",
 		)
 	}
 
