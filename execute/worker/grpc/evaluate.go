@@ -13,10 +13,9 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/dynamicpb"
 
-	"github.com/e2engine/core/execute"
 	"github.com/e2engine/core/execute/call"
-	"github.com/e2engine/core/execute/evaluate"
 	servicegrpc "github.com/e2engine/core/execute/runtime/service/grpc"
+	"github.com/e2engine/core/execute/worker/evaluator"
 	"github.com/e2engine/core/internal/util"
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/pkg/keys"
@@ -27,46 +26,47 @@ var (
 	ErrUnknownStatus               = errorc.New("unknown gRPC status")
 )
 
-var _ evaluate.CallEvaluator = (*Evaluator)(nil)
+var _ evaluator.CallEvaluator = (*Evaluator)(nil)
 
 type Evaluator struct {
 	resolver servicegrpc.MethodResolver
+	reporter executionReporter
 }
 
 func NewEvaluator(
 	resolver servicegrpc.MethodResolver,
+	reporter executionReporter,
 ) *Evaluator {
 	return &Evaluator{
 		resolver: resolver,
+		reporter: reporter,
 	}
 }
 
 func (e *Evaluator) EvaluateResponse(
-	ctx context.Context,
 	callErr error,
 	response *dynamicpb.Message,
 	header metadata.MD,
 	trailer metadata.MD,
 	expect *model.GRPCResponse,
-	result *execute.TestExecutionResult,
 ) error {
-	if err := ctx.Err(); err != nil {
+	if err := e.evaluateStatus(callErr, expect); err != nil {
 		return err
 	}
 
-	result.Summary.Response = &model.TestExecutionResponseSummary{
-		GRPC: &model.GRPCResponse{},
+	if err := e.evaluateMetadata(header, trailer, expect); err != nil {
+		return err
 	}
 
+	return e.evaluateMessage(response, expect)
+}
+
+func (e *Evaluator) evaluateStatus(
+	callErr error,
+	expect *model.GRPCResponse,
+) error {
 	actualStatus := status.Code(callErr)
-
-	result.Summary.Response.GRPC.Status =
-		actualStatus.String()
-
-	actualMetadata := mergeMetadata(header, trailer)
-
-	result.Summary.Response.GRPC.Metadata =
-		selectMetadata(actualMetadata, expect.Metadata)
+	e.reporter.AddGRPCResponseStatus(actualStatus.String())
 
 	expectedStatus, err := grpcCode(
 		expect.Status,
@@ -76,15 +76,23 @@ func (e *Evaluator) EvaluateResponse(
 	}
 
 	if actualStatus != expectedStatus {
-		result.Summary.Deviations = append(
-			result.Summary.Deviations,
-			model.TestExecutionDeviation{
-				Field:    "status",
-				Expected: expectedStatus.String(),
-				Actual:   actualStatus.String(),
-			},
-		)
+		e.reporter.AddDeviation(&model.TestExecutionDeviation{
+			Field:    string(keys.FieldStatus),
+			Expected: expectedStatus.String(),
+			Actual:   actualStatus.String(),
+		})
 	}
+
+	return nil
+}
+
+func (e *Evaluator) evaluateMetadata(
+	header metadata.MD,
+	trailer metadata.MD,
+	expect *model.GRPCResponse,
+) error {
+	actualMetadata := mergeMetadata(header, trailer)
+	e.reporter.AddGRPCResponseMetadata(actualMetadata)
 
 	for key, expectedValues := range expect.Metadata {
 		actualValues, ok := actualMetadata[key]
@@ -95,25 +103,30 @@ func (e *Evaluator) EvaluateResponse(
 			continue
 		}
 
-		result.Summary.Deviations = append(
-			result.Summary.Deviations,
-			model.TestExecutionDeviation{
-				Field:    "metadata." + key,
-				Expected: strings.Join(expectedValues, ","),
-				Actual:   strings.Join(actualValues, ","),
-			},
-		)
+		e.reporter.AddDeviation(&model.TestExecutionDeviation{
+			Field:    "metadata." + key,
+			Expected: strings.Join(expectedValues, ","),
+			Actual:   strings.Join(actualValues, ","),
+		})
 	}
 
+	return nil
+}
+
+func (e *Evaluator) evaluateMessage(
+	response *dynamicpb.Message,
+	expect *model.GRPCResponse,
+) error {
 	responseMap, err := messageToMap(response)
 	if err != nil {
 		return err
 	}
 
-	result.Summary.Response.GRPC.Message =
-		responseMap
+	e.reporter.AddGRPCResponseMessage(responseMap)
 
 	if expect.Message == nil {
+		// An omitted message means that the response message is not evaluated.
+		// An explicitly empty message (`message: {}`) expects an empty protobuf message.
 		return nil
 	}
 
@@ -122,7 +135,7 @@ func (e *Evaluator) EvaluateResponse(
 	)
 
 	if errUnmarshal := unmarshalMap(
-		expect.Message,
+		*expect.Message,
 		expectedMessage,
 	); errUnmarshal != nil {
 		return errUnmarshal
@@ -136,7 +149,7 @@ func (e *Evaluator) EvaluateResponse(
 	}
 
 	expectedJSON, err := json.Marshal(
-		expect.Message,
+		*expect.Message,
 	)
 	if err != nil {
 		return err
@@ -149,42 +162,13 @@ func (e *Evaluator) EvaluateResponse(
 		return err
 	}
 
-	result.Summary.Deviations = append(
-		result.Summary.Deviations,
-		model.TestExecutionDeviation{
-			Field:    "message",
-			Expected: string(expectedJSON),
-			Actual:   string(actualJSON),
-		},
-	)
+	e.reporter.AddPayloadDeviation(&model.TestExecutionDeviation{
+		Field:    string(keys.FieldMessage),
+		Expected: string(expectedJSON),
+		Actual:   string(actualJSON),
+	})
 
 	return nil
-}
-
-func selectMetadata(
-	actual map[string][]string,
-	expected map[string][]string,
-) map[string][]string {
-	if len(expected) == 0 {
-		return nil
-	}
-
-	result := make(
-		map[string][]string,
-		len(expected),
-	)
-
-	for key := range expected {
-		if values, ok := actual[key]; ok {
-			result[key] = util.CloneStringSlice(values)
-		}
-	}
-
-	if len(result) == 0 {
-		return nil
-	}
-
-	return result
 }
 
 func (e *Evaluator) Matches(
@@ -252,7 +236,7 @@ func (e *Evaluator) Matches(
 	)
 
 	if err := unmarshalMap(
-		expected.GRPC.Message,
+		*expected.GRPC.Message,
 		expectedMessage,
 	); err != nil {
 		return false, err

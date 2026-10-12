@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	e2enginehttp "github.com/e2engine/instrumentation-go/http"
+	"go.uber.org/mock/gomock"
 
 	"github.com/e2engine/core/execute"
 	"github.com/e2engine/core/model"
@@ -448,9 +449,15 @@ func TestExecutorExecute(t *testing.T) {
 	)
 	defer server.Close()
 
+	ctrl := gomock.NewController(t)
+	reporter := NewMockexecutionReporter(ctrl)
+
+	evaluator := NewEvaluator(reporter)
+
 	executor := NewTestExecutor(
 		server.Client(),
-		NewEvaluator(),
+		evaluator,
+		reporter,
 	)
 
 	job := &execute.TestJob{
@@ -466,24 +473,69 @@ func TestExecutorExecute(t *testing.T) {
 				Expect: model.ExpectSpec{
 					HTTP: &model.HTTPResponse{
 						StatusCode: nethttp.StatusOK,
-						BodyJSON: `{
-							"name": "test",
-							"id": 42
-						}`,
+						BodyJSON: stringPtrExecutor(
+							`{"name":"test","id":42}`,
+						),
 					},
 				},
 			},
 		},
 	}
 
-	result := &execute.TestExecutionResult{
-		Summary: &model.TestExecutionSummary{},
-	}
+	reporter.EXPECT().
+		AddHTTPRequest(gomock.Any()).
+		Do(func(req *nethttp.Request) {
+			if req.Method != nethttp.MethodGet {
+				t.Errorf(
+					"expected method %q, got %q",
+					nethttp.MethodGet,
+					req.Method,
+				)
+			}
+
+			if req.URL.String() != server.URL {
+				t.Errorf(
+					"expected URL %q, got %q",
+					server.URL,
+					req.URL.String(),
+				)
+			}
+
+			if id := e2enginehttp.TestExecutionID(
+				req.Header,
+			); id != "execution-123" {
+				t.Errorf(
+					"expected execution ID header %q, got %q",
+					"execution-123",
+					id,
+				)
+			}
+		})
+
+	reporter.EXPECT().
+		AddHTTPResponseStatus(nethttp.StatusOK)
+
+	reporter.EXPECT().
+		AddHTTPResponseHeaders(gomock.Any()).
+		Do(func(headers nethttp.Header) {
+			if headers.Get("Content-Type") !=
+				"application/json" {
+				t.Errorf(
+					"expected Content-Type %q, got %q",
+					"application/json",
+					headers.Get("Content-Type"),
+				)
+			}
+		})
+
+	reporter.EXPECT().
+		AddHTTPResponseBodyJSON(
+			`{"id":42,"name":"test"}`,
+		)
 
 	err := executor.Execute(
 		context.Background(),
 		job,
-		result,
 	)
 	if err != nil {
 		t.Fatalf(
@@ -491,33 +543,10 @@ func TestExecutorExecute(t *testing.T) {
 			err,
 		)
 	}
+}
 
-	if result.Summary.Response.HTTP == nil {
-		t.Fatal("expected HTTP response summary")
-	}
-
-	response := result.Summary.Response.HTTP
-
-	if response.StatusCode != nethttp.StatusOK {
-		t.Errorf(
-			"expected status %d, got %d",
-			nethttp.StatusOK,
-			response.StatusCode,
-		)
-	}
-
-	if response.BodyJSON !=
-		`{"id":42,"name":"test"}` {
-		t.Errorf(
-			"unexpected response body %q",
-			response.BodyJSON,
-		)
-	}
-
-	if len(result.Summary.Deviations) != 0 {
-		t.Errorf(
-			"expected no deviations, got %+v",
-			result.Summary.Deviations,
-		)
-	}
+func stringPtrExecutor(
+	value string,
+) *string {
+	return &value
 }

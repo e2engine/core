@@ -22,22 +22,24 @@ import (
 type TestExecutor struct {
 	resolver  servicegrpc.MethodResolver
 	evaluator *Evaluator
+	reporter  executionReporter
 }
 
 func NewTestExecutor(
 	resolver servicegrpc.MethodResolver,
 	evaluator *Evaluator,
+	reporter executionReporter,
 ) *TestExecutor {
 	return &TestExecutor{
 		resolver:  resolver,
 		evaluator: evaluator,
+		reporter:  reporter,
 	}
 }
 
 func (e *TestExecutor) Execute(
 	ctx context.Context,
 	job *execute.TestJob,
-	result *execute.TestExecutionResult,
 ) error {
 	spec := job.Test.Spec.Request.GRPC
 
@@ -98,6 +100,16 @@ func (e *TestExecutor) Execute(
 	var header metadata.MD
 	var trailer metadata.MD
 
+	r := &model.GRPCRequest{
+		Target:   spec.Target,
+		Service:  spec.Service,
+		Method:   spec.Method,
+		Metadata: callMetadata,
+		Message:  spec.Message,
+	}
+
+	e.reporter.AddGRPCRequest(r)
+
 	callErr := connection.Invoke(
 		callCtx,
 		"/"+spec.Service+"/"+spec.Method,
@@ -108,13 +120,11 @@ func (e *TestExecutor) Execute(
 	)
 
 	return e.evaluator.EvaluateResponse(
-		ctx,
 		callErr,
 		response,
 		header,
 		trailer,
 		job.Test.Spec.Expect.GRPC,
-		result,
 	)
 }
 

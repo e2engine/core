@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	e2enginegrpc "github.com/e2engine/instrumentation-go/grpc"
+	"go.uber.org/mock/gomock"
 	ggrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/reflect/protodesc"
@@ -403,9 +404,18 @@ func TestExecutorExecute(t *testing.T) {
 
 	service.Address = listener.Addr().String()
 
+	ctrl := gomock.NewController(t)
+	reporter := NewMockexecutionReporter(ctrl)
+
+	evaluator := NewEvaluator(
+		resolver,
+		reporter,
+	)
+
 	executor := NewTestExecutor(
 		resolver,
-		NewEvaluator(resolver),
+		evaluator,
+		reporter,
 	)
 
 	job := &execute.TestJob{
@@ -437,23 +447,117 @@ func TestExecutorExecute(t *testing.T) {
 				Expect: model.ExpectSpec{
 					GRPC: &model.GRPCResponse{
 						Status: "OK",
-						Message: map[string]any{
-							"id": "user-123",
-						},
+						Message: mapPtrExecutor(
+							map[string]any{
+								"id": "user-123",
+							},
+						),
 					},
 				},
 			},
 		},
 	}
 
-	result := &execute.TestExecutionResult{
-		Summary: &model.TestExecutionSummary{},
-	}
+	reporter.EXPECT().
+		AddGRPCRequest(gomock.Any()).
+		Do(func(req *model.GRPCRequest) {
+			if req.Target != service.Address {
+				t.Errorf(
+					"expected target %q, got %q",
+					service.Address,
+					req.Target,
+				)
+			}
+
+			if req.Service != "users.UserService" {
+				t.Errorf(
+					"expected service %q, got %q",
+					"users.UserService",
+					req.Service,
+				)
+			}
+
+			if req.Method != "Create" {
+				t.Errorf(
+					"expected method %q, got %q",
+					"Create",
+					req.Method,
+				)
+			}
+
+			if !reflect.DeepEqual(
+				req.Metadata["x-request-id"],
+				[]string{"request-123"},
+			) {
+				t.Errorf(
+					"unexpected request metadata: %#v",
+					req.Metadata,
+				)
+			}
+
+			if id := e2enginegrpc.TestExecutionID(
+				metadata.MD(req.Metadata),
+			); id != "execution-123" {
+				t.Errorf(
+					"expected execution ID %q, got %q",
+					"execution-123",
+					id,
+				)
+			}
+
+			expectedMessage := map[string]any{
+				"name": "Yaroslav",
+			}
+
+			if !reflect.DeepEqual(
+				req.Message,
+				expectedMessage,
+			) {
+				t.Errorf(
+					"expected message %#v, got %#v",
+					expectedMessage,
+					req.Message,
+				)
+			}
+		})
+
+	reporter.EXPECT().
+		AddGRPCResponseStatus("OK")
+
+	reporter.EXPECT().
+		AddGRPCResponseMetadata(gomock.Any()).
+		Do(func(md map[string][]string) {
+			if !reflect.DeepEqual(
+				md["x-header"],
+				[]string{"header-value"},
+			) {
+				t.Errorf(
+					"unexpected header metadata: %#v",
+					md,
+				)
+			}
+
+			if !reflect.DeepEqual(
+				md["x-trailer"],
+				[]string{"trailer-value"},
+			) {
+				t.Errorf(
+					"unexpected trailer metadata: %#v",
+					md,
+				)
+			}
+		})
+
+	reporter.EXPECT().
+		AddGRPCResponseMessage(
+			map[string]any{
+				"id": "user-123",
+			},
+		)
 
 	err = executor.Execute(
 		context.Background(),
 		job,
-		result,
 	)
 	if err != nil {
 		t.Fatalf(
@@ -461,49 +565,10 @@ func TestExecutorExecute(t *testing.T) {
 			err,
 		)
 	}
+}
 
-	if result.Summary.Response.GRPC == nil {
-		t.Fatal(
-			"expected gRPC response summary",
-		)
-	}
-
-	response := result.Summary.Response.GRPC
-
-	if response.Status != "OK" {
-		t.Errorf(
-			"expected status %q, got %q",
-			"OK",
-			response.Status,
-		)
-	}
-
-	expectedMessage := map[string]any{
-		"id": "user-123",
-	}
-
-	if !reflect.DeepEqual(
-		response.Message,
-		expectedMessage,
-	) {
-		t.Errorf(
-			"expected message %#v, got %#v",
-			expectedMessage,
-			response.Message,
-		)
-	}
-
-	if response.Metadata != nil {
-		t.Errorf(
-			"expected nil metadata, got %#v",
-			response.Metadata,
-		)
-	}
-
-	if len(result.Summary.Deviations) != 0 {
-		t.Errorf(
-			"expected no deviations, got %+v",
-			result.Summary.Deviations,
-		)
-	}
+func mapPtrExecutor(
+	value map[string]any,
+) *map[string]any {
+	return &value
 }

@@ -1,4 +1,4 @@
-package evaluate
+package reporter
 
 import (
 	"testing"
@@ -480,7 +480,7 @@ func TestSummarizeCalls(t *testing.T) {
 				store.Record(actual)
 			}
 
-			actual := SummarizeCalls(
+			actual := summarizeCalls(
 				"execution-1",
 				store,
 			)
@@ -528,12 +528,47 @@ func TestSummarizeCallsDoesNotExposeCapturedData(
 		},
 	})
 
-	actual := SummarizeCalls(
+	store.Record(call.Call{
+		TestExecutionID: "execution-1",
+		ServiceID:       "grpc-service",
+		GRPC: &call.GRPCCall{
+			Request: call.GRPCRequest{
+				Service: "users.UserService",
+				Method:  "Create",
+				Metadata: map[string][]string{
+					"authorization": {
+						"Bearer secret-token",
+					},
+				},
+				Message: []byte(`{"secret": "request"}`),
+			},
+			Response: call.GRPCResponse{
+				Status: "OK",
+				Metadata: map[string][]string{
+					"set-cookie": {
+						"secret-cookie",
+					},
+				},
+				Message: []byte(`{"secret": "response"}`),
+			},
+		},
+	})
+
+	actual := summarizeCalls(
 		"execution-1",
 		store,
 	)
 
 	expected := []model.ServiceObservedCalls{
+		{
+			ServiceID: "grpc-service",
+			Count:     1,
+			GRPC: &model.GRPCServiceObservedCall{
+				Service:        "users.UserService",
+				Method:         "Create",
+				ResponseStatus: "OK",
+			},
+		},
 		{
 			ServiceID: "service-1",
 			Count:     1,

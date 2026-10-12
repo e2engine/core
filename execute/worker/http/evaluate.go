@@ -8,44 +8,40 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/e2engine/core/execute"
 	"github.com/e2engine/core/execute/call"
-	"github.com/e2engine/core/execute/evaluate"
+	"github.com/e2engine/core/execute/worker/evaluator"
 	"github.com/e2engine/core/internal/util"
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/pkg/keys"
 )
 
-var _ evaluate.CallEvaluator = (*Evaluator)(nil)
+var _ evaluator.CallEvaluator = (*Evaluator)(nil)
 
-type Evaluator struct{}
+type Evaluator struct {
+	reporter executionReporter
+}
 
-func NewEvaluator() *Evaluator {
-	return &Evaluator{}
+func NewEvaluator(
+	reporter executionReporter,
+) *Evaluator {
+	return &Evaluator{
+		reporter: reporter,
+	}
 }
 
 func (e *Evaluator) EvaluateResponse(
-	_ context.Context,
 	resp *http.Response,
 	expect *model.HTTPResponse,
-	result *execute.TestExecutionResult,
 ) error {
-	result.Summary.Response = &model.TestExecutionResponseSummary{
-		HTTP: &model.HTTPResponse{
-			StatusCode: resp.StatusCode,
-			Headers:    selectHeaders(resp.Header, expect.Headers),
-		},
-	}
+	e.reporter.AddHTTPResponseStatus(resp.StatusCode)
+	e.reporter.AddHTTPResponseHeaders(resp.Header)
 
 	if resp.StatusCode != expect.StatusCode {
-		result.Summary.Deviations = append(
-			result.Summary.Deviations,
-			model.TestExecutionDeviation{
-				Field:    "status_code",
-				Expected: strconv.Itoa(expect.StatusCode),
-				Actual:   strconv.Itoa(resp.StatusCode),
-			},
-		)
+		e.reporter.AddDeviation(&model.TestExecutionDeviation{
+			Field:    string(keys.FieldStatusCode),
+			Expected: strconv.Itoa(expect.StatusCode),
+			Actual:   strconv.Itoa(resp.StatusCode),
+		})
 	}
 
 	for key, expectedValues := range expect.Headers {
@@ -56,17 +52,15 @@ func (e *Evaluator) EvaluateResponse(
 			continue
 		}
 
-		result.Summary.Deviations = append(
-			result.Summary.Deviations,
-			model.TestExecutionDeviation{
-				Field:    "headers." + key,
-				Expected: strings.Join(expectedValues, ","),
-				Actual:   strings.Join(actualValues, ","),
-			},
-		)
+		e.reporter.AddDeviation(&model.TestExecutionDeviation{
+			Field:    "headers." + key,
+			Expected: strings.Join(expectedValues, ","),
+			Actual:   strings.Join(actualValues, ","),
+		})
 	}
 
-	if expect.Body == "" && expect.BodyJSON == "" {
+	if expect.Body == nil && expect.BodyJSON == nil {
+		// nil means "do not evaluate body"
 		return nil
 	}
 
@@ -75,44 +69,37 @@ func (e *Evaluator) EvaluateResponse(
 		return err
 	}
 
-	if expect.Body != "" {
-		result.Summary.Response.HTTP.Body = string(actualBody)
+	if expect.Body != nil {
+		e.reporter.AddHTTPResponseBody(string(actualBody))
 
-		if string(actualBody) != expect.Body {
-			result.Summary.Deviations = append(
-				result.Summary.Deviations,
-				model.TestExecutionDeviation{
-					Field:    string(keys.FieldBody),
-					Expected: expect.Body,
-					Actual:   string(actualBody),
-				},
-			)
+		if string(actualBody) != *expect.Body {
+			e.reporter.AddPayloadDeviation(&model.TestExecutionDeviation{
+				Field:    string(keys.FieldBody),
+				Expected: *expect.Body,
+				Actual:   string(actualBody),
+			})
 		}
 
 		return nil
 	}
 
 	if !json.Valid(actualBody) {
-		result.Summary.Response.HTTP.Body = string(actualBody)
+		e.reporter.AddHTTPResponseBody(string(actualBody))
 
-		result.Summary.Deviations = append(
-			result.Summary.Deviations,
-			model.TestExecutionDeviation{
-				Field:    string(keys.FieldBodyJSON),
-				Expected: util.CompactJSON([]byte(expect.BodyJSON)),
-				Actual:   string(actualBody),
-				Message:  "response body is not valid JSON",
-			},
-		)
+		e.reporter.AddPayloadDeviation(&model.TestExecutionDeviation{
+			Field:    string(keys.FieldBodyJSON),
+			Expected: util.CompactJSON([]byte(*expect.BodyJSON)),
+			Actual:   string(actualBody),
+			Message:  "response body is not valid JSON",
+		})
 
 		return nil
 	}
 
-	result.Summary.Response.HTTP.BodyJSON =
-		util.CompactJSON(actualBody)
+	e.reporter.AddHTTPResponseBodyJSON(util.CompactJSON(actualBody))
 
 	equal, err := util.IsJSONEqual(
-		[]byte(expect.BodyJSON),
+		[]byte(*expect.BodyJSON),
 		actualBody,
 	)
 	if err != nil {
@@ -121,46 +108,16 @@ func (e *Evaluator) EvaluateResponse(
 	}
 
 	if !equal {
-		result.Summary.Deviations = append(
-			result.Summary.Deviations,
-			model.TestExecutionDeviation{
-				Field: string(keys.FieldBodyJSON),
-				Expected: util.CompactJSON(
-					[]byte(expect.BodyJSON),
-				),
-				Actual: util.CompactJSON(actualBody),
-			},
-		)
+		e.reporter.AddPayloadDeviation(&model.TestExecutionDeviation{
+			Field: string(keys.FieldBodyJSON),
+			Expected: util.CompactJSON(
+				[]byte(*expect.BodyJSON),
+			),
+			Actual: util.CompactJSON(actualBody),
+		})
 	}
 
 	return nil
-}
-
-func selectHeaders(
-	actual http.Header,
-	expected map[string][]string,
-) map[string][]string {
-	if len(expected) == 0 {
-		return nil
-	}
-
-	result := make(
-		map[string][]string,
-		len(expected),
-	)
-
-	for key := range expected {
-		values := actual.Values(key)
-		if len(values) > 0 {
-			result[key] = util.CloneStringSlice(values)
-		}
-	}
-
-	if len(result) == 0 {
-		return nil
-	}
-
-	return result
 }
 
 func (e *Evaluator) Matches(
@@ -211,13 +168,13 @@ func httpCallMatchesExpectation(
 		}
 	}
 
-	if expected.Body != "" && string(actual.Body) != expected.Body {
+	if expected.Body != nil && string(actual.Body) != *expected.Body {
 		return false
 	}
 
-	if expected.BodyJSON != "" {
+	if expected.BodyJSON != nil {
 		equal, err := util.IsJSONEqual(
-			[]byte(expected.BodyJSON),
+			[]byte(*expected.BodyJSON),
 			actual.Body,
 		)
 		if err != nil || !equal {

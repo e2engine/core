@@ -47,7 +47,7 @@ type Fixture struct {
 	service  string
 	method   string
 	metadata map[string][]string
-	message  map[string]any
+	message  *map[string]any
 
 	status           codes.Code
 	responseMetadata map[string][]string
@@ -315,9 +315,13 @@ func (s *MockGRPCService) match(
 			continue
 		}
 
+		if fixture.message == nil {
+			return fixture, nil
+		}
+
 		expected, err := buildMessage(
 			method.Input(),
-			fixture.message,
+			*fixture.message,
 		)
 		if err != nil {
 			return nil, errorc.With(
@@ -445,20 +449,28 @@ func compileFixtures(
 			continue
 		}
 
+		fixture := Fixture{
+			service:  spec.When.GRPC.Service,
+			method:   spec.When.GRPC.Method,
+			metadata: spec.When.GRPC.Metadata,
+
+			status: grpcCode(
+				spec.Then.GRPC.Status,
+			),
+			responseMetadata: spec.Then.GRPC.Metadata,
+		}
+
+		if spec.When.GRPC.Message != nil {
+			fixture.message = spec.When.GRPC.Message
+		}
+
+		if spec.Then.GRPC.Message != nil {
+			fixture.response = *spec.Then.GRPC.Message
+		}
+
 		fixtures = append(
 			fixtures,
-			Fixture{
-				service:  spec.When.GRPC.Service,
-				method:   spec.When.GRPC.Method,
-				metadata: spec.When.GRPC.Metadata,
-				message:  spec.When.GRPC.Message,
-
-				status: grpcCode(
-					spec.Then.GRPC.Status,
-				),
-				responseMetadata: spec.Then.GRPC.Metadata,
-				response:         spec.Then.GRPC.Message,
-			},
+			fixture,
 		)
 	}
 
