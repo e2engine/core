@@ -133,8 +133,8 @@ type RequestSpec struct {
 }
 
 type ExpectSpec struct {
-	HTTP  *HTTPResponse          `json:"http,omitempty" yaml:"http,omitempty" validateElem:"omitempty,dive"`
-	GRPC  *GRPCResponse          `json:"grpc,omitempty" yaml:"grpc,omitempty" validateElem:"omitempty,dive"`
+	HTTP  *HTTPResponsePattern   `json:"http,omitempty" yaml:"http,omitempty" validateElem:"omitempty,dive"`
+	GRPC  *GRPCResponsePattern   `json:"grpc,omitempty" yaml:"grpc,omitempty" validateElem:"omitempty,dive"`
 	Calls []ServiceExpectedCalls `json:"calls,omitempty" yaml:"calls,omitempty" validateElem:"dive"`
 }
 

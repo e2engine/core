@@ -105,9 +105,9 @@ func TestCloneMetadata(t *testing.T) {
 		)
 	}
 
-	if len(got) != 1 {
+	if len(got) != 2 {
 		t.Fatalf(
-			"expected execution ID metadata to be excluded, got %#v",
+			"expected execution ID metadata to be present, got %#v",
 			got,
 		)
 	}
@@ -310,9 +310,9 @@ func TestRouter(t *testing.T) {
 		)
 	}
 
-	if id := e2enginegrpc.TestExecutionID(upstreamMetadata); id != "" {
+	if id := e2enginegrpc.TestExecutionID(upstreamMetadata); id == "" {
 		t.Fatal(
-			"expected execution ID not to be forwarded upstream",
+			"expected execution ID to be forwarded upstream",
 		)
 	}
 
@@ -374,9 +374,9 @@ func TestRouter(t *testing.T) {
 		)
 	}
 
-	if id := e2enginegrpc.TestExecutionID(got.GRPC.Request.Metadata); id != "" {
+	if id := e2enginegrpc.TestExecutionID(got.GRPC.Request.Metadata); id == "" {
 		t.Fatalf(
-			"expected execution ID to be excluded from recorded metadata, got %q",
+			"expected execution ID to be present in recorded metadata, got %q",
 			id,
 		)
 	}

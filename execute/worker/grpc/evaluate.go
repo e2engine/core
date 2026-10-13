@@ -3,6 +3,7 @@ package grpc
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/ygrebnov/errorc"
@@ -14,6 +15,7 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 
 	"github.com/e2engine/core/execute/call"
+	"github.com/e2engine/core/execute/match"
 	servicegrpc "github.com/e2engine/core/execute/runtime/service/grpc"
 	"github.com/e2engine/core/execute/worker/evaluator"
 	"github.com/e2engine/core/internal/util"
@@ -48,7 +50,7 @@ func (e *Evaluator) EvaluateResponse(
 	response *dynamicpb.Message,
 	header metadata.MD,
 	trailer metadata.MD,
-	expect *model.GRPCResponse,
+	expect *model.GRPCResponsePattern,
 ) error {
 	if err := e.evaluateStatus(callErr, expect); err != nil {
 		return err
@@ -63,7 +65,7 @@ func (e *Evaluator) EvaluateResponse(
 
 func (e *Evaluator) evaluateStatus(
 	callErr error,
-	expect *model.GRPCResponse,
+	expect *model.GRPCResponsePattern,
 ) error {
 	actualStatus := status.Code(callErr)
 	e.reporter.AddGRPCResponseStatus(actualStatus.String())
@@ -89,24 +91,35 @@ func (e *Evaluator) evaluateStatus(
 func (e *Evaluator) evaluateMetadata(
 	header metadata.MD,
 	trailer metadata.MD,
-	expect *model.GRPCResponse,
+	expect *model.GRPCResponsePattern,
 ) error {
 	actualMetadata := mergeMetadata(header, trailer)
 	e.reporter.AddGRPCResponseMetadata(actualMetadata)
 
 	for key, expectedValues := range expect.Metadata {
-		actualValues, ok := actualMetadata[key]
-		if ok && util.IsStringSlicesEqual(
+		actualValues, exists := actualMetadata[strings.ToLower(key)]
+
+		if match.IsStringSliceMatched(
 			actualValues,
+			exists,
 			expectedValues,
 		) {
 			continue
 		}
 
+		sortedActual := slices.Clone(actualValues)
+		slices.Sort(sortedActual)
+
+		expectedStrings := make([]string, len(expectedValues))
+		for i, v := range expectedValues {
+			expectedStrings[i] = v.String()
+		}
+		slices.Sort(expectedStrings)
+
 		e.reporter.AddDeviation(&model.TestExecutionDeviation{
 			Field:    "metadata." + key,
-			Expected: strings.Join(expectedValues, ","),
-			Actual:   strings.Join(actualValues, ","),
+			Expected: strings.Join(expectedStrings, ","),
+			Actual:   strings.Join(sortedActual, ","),
 		})
 	}
 
@@ -115,7 +128,7 @@ func (e *Evaluator) evaluateMetadata(
 
 func (e *Evaluator) evaluateMessage(
 	response *dynamicpb.Message,
-	expect *model.GRPCResponse,
+	expect *model.GRPCResponsePattern,
 ) error {
 	responseMap, err := messageToMap(response)
 	if err != nil {
@@ -125,47 +138,30 @@ func (e *Evaluator) evaluateMessage(
 	e.reporter.AddGRPCResponseMessage(responseMap)
 
 	if expect.Message == nil {
-		// An omitted message means that the response message is not evaluated.
-		// An explicitly empty message (`message: {}`) expects an empty protobuf message.
 		return nil
 	}
 
-	expectedMessage := dynamicpb.NewMessage(
-		response.Descriptor(),
-	)
-
-	if errUnmarshal := unmarshalMap(
-		*expect.Message,
-		expectedMessage,
-	); errUnmarshal != nil {
-		return errUnmarshal
-	}
-
-	if proto.Equal(
-		expectedMessage,
+	matched, err := match.IsGRPCMessageMatched(
 		response,
-	) {
-		return nil
-	}
-
-	expectedJSON, err := json.Marshal(
-		*expect.Message,
+		expect.Message,
 	)
 	if err != nil {
 		return err
 	}
 
-	actualJSON, err := protojson.Marshal(
-		response,
-	)
+	if matched {
+		return nil
+	}
+
+	actualJSON, err := protojson.Marshal(response)
 	if err != nil {
 		return err
 	}
 
-	e.reporter.AddPayloadDeviation(&model.TestExecutionDeviation{
+	e.reporter.AddPayloadDeviation(&model.PayloadDeviation{
 		Field:    string(keys.FieldMessage),
-		Expected: string(expectedJSON),
-		Actual:   string(actualJSON),
+		Expected: expect.Message,
+		Actual:   actualJSON,
 	})
 
 	return nil
@@ -192,14 +188,13 @@ func (e *Evaluator) Matches(
 	}
 
 	for key, expectedValues := range expected.GRPC.Metadata {
-		actualValues, ok :=
-			actual.GRPC.Request.Metadata[key]
+		actualValues, exists := actual.GRPC.Request.Metadata[strings.ToLower(key)]
 
-		if !ok ||
-			!util.IsStringSlicesEqual(
-				actualValues,
-				expectedValues,
-			) {
+		if !match.IsStringSliceMatched(
+			actualValues,
+			exists,
+			expectedValues,
+		) {
 			return false, nil
 		}
 	}
@@ -231,21 +226,10 @@ func (e *Evaluator) Matches(
 		)
 	}
 
-	expectedMessage := dynamicpb.NewMessage(
-		method.Input(),
-	)
-
-	if err := unmarshalMap(
-		*expected.GRPC.Message,
-		expectedMessage,
-	); err != nil {
-		return false, err
-	}
-
-	return proto.Equal(
+	return match.IsGRPCMessageMatched(
 		actualMessage,
-		expectedMessage,
-	), nil
+		expected.GRPC.Message,
+	)
 }
 
 func (e *Evaluator) Deviation(

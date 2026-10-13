@@ -9,6 +9,7 @@ import (
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/internal/util"
 	"github.com/e2engine/core/model"
+	"github.com/e2engine/core/model/matcher"
 )
 
 type Reporter struct {
@@ -81,25 +82,41 @@ func (r *Reporter) AddDeviation(deviation *model.TestExecutionDeviation) {
 		return
 	}
 	r.ensureNotFinalized()
+
 	r.report.Summary.Deviations = append(r.report.Summary.Deviations, *deviation)
 }
 
-func (r *Reporter) AddPayloadDeviation(deviation *model.TestExecutionDeviation) {
+const dumpDisabled = "<dump disabled>"
+
+func (r *Reporter) AddPayloadDeviation(deviation *model.PayloadDeviation) {
 	if deviation == nil {
 		return
 	}
 
-	d := &model.TestExecutionDeviation{
+	r.ensureNotFinalized()
+
+	d := model.TestExecutionDeviation{
 		Field:   deviation.Field,
 		Message: deviation.Message,
 	}
 
-	if r.cfg.DumpPayload {
-		d.Actual = deviation.Actual
-		d.Expected = deviation.Expected
+	switch {
+	case deviation.Expected == nil:
+	case !r.cfg.DumpPayload:
+		d.Expected = dumpDisabled
+	default:
+		d.Expected = deviation.Expected.String()
 	}
 
-	r.AddDeviation(d)
+	switch {
+	case len(deviation.Actual) == 0:
+	case !r.cfg.DumpPayload:
+		d.Actual = dumpDisabled
+	default:
+		d.Actual = string(deviation.Actual)
+	}
+
+	r.report.Summary.Deviations = append(r.report.Summary.Deviations, d)
 }
 
 func (r *Reporter) AddHTTPRequest(req *http.Request) {
@@ -111,13 +128,23 @@ func (r *Reporter) AddHTTPRequest(req *http.Request) {
 		Headers: req.Header.Clone(),
 	}
 
-	if r.cfg.DumpPayload {
-		request.Body = r.testSpec.Request.HTTP.Body
+	if r.testSpec.Request.HTTP.Body != "" {
+		switch {
+		case !r.cfg.DumpPayload:
+			request.Body = dumpDisabled
+		default:
+			request.Body = r.testSpec.Request.HTTP.Body
+		}
+	}
 
-		if r.testSpec.Request.HTTP.BodyJSON != "" {
-			request.BodyJSON = util.CompactJSON(
+	if r.testSpec.Request.HTTP.BodyJSON != "" {
+		switch {
+		case !r.cfg.DumpPayload:
+			request.BodyJSON = dumpDisabled
+		default:
+			request.BodyJSON = string(util.CompactJSON(
 				json.RawMessage(r.testSpec.Request.HTTP.BodyJSON),
-			)
+			))
 		}
 	}
 
@@ -155,7 +182,7 @@ func (r *Reporter) AddHTTPResponseHeaders(headers http.Header) {
 
 func selectHeaders(
 	actual http.Header,
-	expected map[string][]string,
+	expected map[string][]matcher.String,
 ) map[string][]string {
 	if len(expected) == 0 {
 		return nil
@@ -166,10 +193,10 @@ func selectHeaders(
 		len(expected),
 	)
 
-	for key := range expected {
-		values := actual.Values(key)
+	for k := range expected {
+		values := actual.Values(k)
 		if len(values) > 0 {
-			result[key] = util.CloneStringSlice(values)
+			result[k] = util.CloneStringSlice(values)
 		}
 	}
 
@@ -180,26 +207,30 @@ func selectHeaders(
 	return result
 }
 
-func (r *Reporter) AddHTTPResponseBody(body string) {
-	if !r.cfg.DumpPayload {
-		return
-	}
-
+func (r *Reporter) AddHTTPResponseBody(body []byte) {
 	r.ensureNotFinalized()
-
 	r.ensureHTTPResponseSummary()
-	r.report.Summary.Response.HTTP.Body = &body
+
+	switch {
+	case len(body) == 0:
+	case !r.cfg.DumpPayload:
+		r.report.Summary.Response.HTTP.Body = dumpDisabled
+	default:
+		r.report.Summary.Response.HTTP.Body = string(body)
+	}
 }
 
-func (r *Reporter) AddHTTPResponseBodyJSON(body string) {
-	if !r.cfg.DumpPayload {
-		return
-	}
-
+func (r *Reporter) AddHTTPResponseBodyJSON(body []byte) {
 	r.ensureNotFinalized()
-
 	r.ensureHTTPResponseSummary()
-	r.report.Summary.Response.HTTP.BodyJSON = &body
+
+	switch {
+	case len(body) == 0:
+	case !r.cfg.DumpPayload:
+		r.report.Summary.Response.HTTP.BodyJSON = dumpDisabled
+	default:
+		r.report.Summary.Response.HTTP.BodyJSON = string(body)
+	}
 }
 
 func (r *Reporter) ensureGRPCResponseSummary() {
@@ -222,8 +253,14 @@ func (r *Reporter) AddGRPCRequest(req *model.GRPCRequest) {
 		Metadata: util.CloneStringSliceMap(req.Metadata),
 	}
 
-	if r.cfg.DumpPayload {
-		request.Message = util.CloneMap(req.Message)
+	if req.Message != nil {
+		if r.cfg.DumpPayload {
+			request.Message = util.CloneMap(req.Message)
+		} else {
+			request.Message = map[string]any{
+				dumpDisabled: nil,
+			}
+		}
 	}
 
 	r.report.Summary.Request = &model.TestExecutionRequestSummary{
@@ -250,7 +287,7 @@ func (r *Reporter) AddGRPCResponseMetadata(metadata map[string][]string) {
 
 func selectMetadata(
 	actual map[string][]string,
-	expected map[string][]string,
+	expected map[string][]matcher.String,
 ) map[string][]string {
 	if len(expected) == 0 {
 		return nil
@@ -275,14 +312,16 @@ func selectMetadata(
 }
 
 func (r *Reporter) AddGRPCResponseMessage(message map[string]any) {
-	if !r.cfg.DumpPayload {
-		return
-	}
-
 	r.ensureNotFinalized()
-
 	r.ensureGRPCResponseSummary()
 
-	m := util.CloneMap(message)
-	r.report.Summary.Response.GRPC.Message = &m
+	switch {
+	case len(message) == 0:
+		r.report.Summary.Response.GRPC.Message = map[string]any{"<none>": nil}
+	case !r.cfg.DumpPayload:
+		r.report.Summary.Response.GRPC.Message = map[string]any{dumpDisabled: nil}
+	default:
+		m := util.CloneMap(message)
+		r.report.Summary.Response.GRPC.Message = m
+	}
 }

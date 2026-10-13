@@ -94,4 +94,15 @@ type TestExecutionDeviation struct {
 	Message  string `json:"message,omitempty" yaml:"message,omitempty"`
 }
 
+type Stringer interface {
+	String() string
+}
+
+type PayloadDeviation struct {
+	Field    string
+	Expected Stringer
+	Actual   []byte
+	Message  string
+}
+
 type TestExecutionsPage = Page[TestExecution]

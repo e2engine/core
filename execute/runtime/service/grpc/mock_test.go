@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"encoding/json"
 	nativeerrors "errors"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 
 	"github.com/e2engine/core/model"
+	"github.com/e2engine/core/model/matcher"
 	"github.com/e2engine/core/pkg/errors"
 	"github.com/e2engine/core/pkg/log"
 )
@@ -69,86 +71,23 @@ func TestGRPCCode(t *testing.T) {
 		value    string
 		expected codes.Code
 	}{
-		{
-			value:    "",
-			expected: codes.OK,
-		},
-		{
-			value:    "ok",
-			expected: codes.OK,
-		},
-		{
-			value:    "OK",
-			expected: codes.OK,
-		},
-		{
-			value:    "cancelled",
-			expected: codes.Canceled,
-		},
-		{
-			value:    "unknown",
-			expected: codes.Unknown,
-		},
-		{
-			value:    "invalid_argument",
-			expected: codes.InvalidArgument,
-		},
-		{
-			value:    "deadline_exceeded",
-			expected: codes.DeadlineExceeded,
-		},
-		{
-			value:    "not_found",
-			expected: codes.NotFound,
-		},
-		{
-			value:    "already_exists",
-			expected: codes.AlreadyExists,
-		},
-		{
-			value:    "permission_denied",
-			expected: codes.PermissionDenied,
-		},
-		{
-			value:    "resource_exhausted",
-			expected: codes.ResourceExhausted,
-		},
-		{
-			value:    "failed_precondition",
-			expected: codes.FailedPrecondition,
-		},
-		{
-			value:    "aborted",
-			expected: codes.Aborted,
-		},
-		{
-			value:    "out_of_range",
-			expected: codes.OutOfRange,
-		},
-		{
-			value:    "unimplemented",
-			expected: codes.Unimplemented,
-		},
-		{
-			value:    "internal",
-			expected: codes.Internal,
-		},
-		{
-			value:    "unavailable",
-			expected: codes.Unavailable,
-		},
-		{
-			value:    "data_loss",
-			expected: codes.DataLoss,
-		},
-		{
-			value:    "unauthenticated",
-			expected: codes.Unauthenticated,
-		},
-		{
-			value:    "invalid",
-			expected: codes.Unknown,
-		},
+		{"OK", codes.OK},
+		{"Canceled", codes.Canceled},
+		{"Unknown", codes.Unknown},
+		{"InvalidArgument", codes.InvalidArgument},
+		{"DeadlineExceeded", codes.DeadlineExceeded},
+		{"NotFound", codes.NotFound},
+		{"AlreadyExists", codes.AlreadyExists},
+		{"PermissionDenied", codes.PermissionDenied},
+		{"ResourceExhausted", codes.ResourceExhausted},
+		{"FailedPrecondition", codes.FailedPrecondition},
+		{"Aborted", codes.Aborted},
+		{"OutOfRange", codes.OutOfRange},
+		{"Unimplemented", codes.Unimplemented},
+		{"Internal", codes.Internal},
+		{"Unavailable", codes.Unavailable},
+		{"DataLoss", codes.DataLoss},
+		{"Unauthenticated", codes.Unauthenticated},
 	}
 
 	for _, tt := range tests {
@@ -167,54 +106,77 @@ func TestGRPCCode(t *testing.T) {
 	}
 }
 
-func TestCompileFixtures(t *testing.T) {
-	m1 := map[string]any{"id": "42"}
-	m2 := map[string]any{"message": "not found"}
+func TestGRPCCodeInvalid(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+	}{
+		{
+			name:  "empty status",
+			value: "",
+		},
+		{
+			name:  "lowercase status",
+			value: "ok",
+		},
+		{
+			name:  "snake case status",
+			value: "not_found",
+		},
+		{
+			name:  "unknown status",
+			value: "invalid",
+		},
+	}
 
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Errorf(
+						"expected grpcCode(%q) to panic",
+						tt.value,
+					)
+				}
+			}()
+
+			grpcCode(tt.value)
+		})
+	}
+}
+
+func TestCompileFixtures(t *testing.T) {
 	specs := []model.FixtureSpec{
 		{
 			When: model.FixtureWhen{
 				GRPC: &model.GRPCRequestPattern{
 					Service: "users.v1.UserService",
 					Method:  "GetUser",
-					Metadata: map[string][]string{
+					Metadata: map[string][]matcher.String{
 						"x-request-id": {
-							"one",
-							"two",
+							grpcStringEquals("one"),
+							grpcStringEquals("two"),
 						},
 					},
-					Message: &m1,
+					Message: grpcMessageMatcher(map[string]any{
+						"id": "42",
+					}),
 				},
 			},
 			Then: model.FixtureThen{
 				GRPC: &model.GRPCResponse{
-					Status: "not_found",
+					Status: "NotFound",
 					Metadata: map[string][]string{
 						"x-response-id": {
 							"three",
 							"four",
 						},
 					},
-					Message: &m2,
+					Message: map[string]any{
+						"message": "not found",
+					},
 				},
 			},
-		},
-		{
-			When: model.FixtureWhen{},
-			Then: model.FixtureThen{
-				GRPC: &model.GRPCResponse{
-					Status: "ok",
-				},
-			},
-		},
-		{
-			When: model.FixtureWhen{
-				GRPC: &model.GRPCRequestPattern{
-					Service: "users.v1.UserService",
-					Method:  "Ignored",
-				},
-			},
-			Then: model.FixtureThen{},
 		},
 	}
 
@@ -253,11 +215,22 @@ func TestCompileFixtures(t *testing.T) {
 		)
 	}
 
-	if (*fixture.message)["id"] != "42" {
+	if fixture.message == nil {
+		t.Fatal("expected request message matcher")
+	}
+
+	if fixture.message.Operator != matcher.GRPCMessageMatchOperatorEquals {
 		t.Errorf(
-			"expected request id %q, got %v",
-			"42",
-			(*fixture.message)["id"],
+			"expected equals operator, got %q",
+			fixture.message.Operator,
+		)
+	}
+
+	if fixture.message.Value != `{"id":"42"}` {
+		t.Errorf(
+			"expected request message %q, got %q",
+			`{"id":"42"}`,
+			fixture.message.Value,
 		)
 	}
 
@@ -270,9 +243,10 @@ func TestCompileFixtures(t *testing.T) {
 	}
 
 	requestMetadata := fixture.metadata["x-request-id"]
+
 	if len(requestMetadata) != 2 ||
-		requestMetadata[0] != "one" ||
-		requestMetadata[1] != "two" {
+		requestMetadata[0].Value != "one" ||
+		requestMetadata[1].Value != "two" {
 		t.Errorf(
 			"expected request metadata [one two], got %v",
 			requestMetadata,
@@ -280,6 +254,7 @@ func TestCompileFixtures(t *testing.T) {
 	}
 
 	responseMetadata := fixture.responseMetadata["x-response-id"]
+
 	if len(responseMetadata) != 2 ||
 		responseMetadata[0] != "three" ||
 		responseMetadata[1] != "four" {
@@ -339,9 +314,7 @@ func TestBuildMessage(t *testing.T) {
 				}
 
 				if actual := message.Get(active).Bool(); !actual {
-					t.Error(
-						"expected active to be true",
-					)
+					t.Error("expected active to be true")
 				}
 			},
 		},
@@ -359,9 +332,7 @@ func TestBuildMessage(t *testing.T) {
 			) {
 				t.Helper()
 
-				tags := descriptor.Fields().ByName(
-					"tags",
-				)
+				tags := descriptor.Fields().ByName("tags")
 				list := message.Get(tags).List()
 
 				if list.Len() != 2 {
@@ -403,10 +374,7 @@ func TestBuildMessage(t *testing.T) {
 				)
 			}
 
-			tt.expected(
-				t,
-				message,
-			)
+			tt.expected(t, message)
 		})
 	}
 }
@@ -439,13 +407,12 @@ func TestBuildMessageInvalidField(t *testing.T) {
 func TestAreMetadataEqual(t *testing.T) {
 	tests := []struct {
 		name     string
-		expected map[string][]string
+		expected map[string][]matcher.String
 		actual   metadata.MD
 		want     bool
 	}{
 		{
-			name:     "nil expected",
-			expected: nil,
+			name: "nil expected",
 			actual: metadata.MD{
 				"additional": {"value"},
 			},
@@ -453,8 +420,8 @@ func TestAreMetadataEqual(t *testing.T) {
 		},
 		{
 			name: "matching value",
-			expected: map[string][]string{
-				"x-request-id": {"one"},
+			expected: map[string][]matcher.String{
+				"x-request-id": {grpcStringEquals("one")},
 			},
 			actual: metadata.MD{
 				"x-request-id": {"one"},
@@ -463,10 +430,10 @@ func TestAreMetadataEqual(t *testing.T) {
 		},
 		{
 			name: "matching repeated values",
-			expected: map[string][]string{
+			expected: map[string][]matcher.String{
 				"x-request-id": {
-					"one",
-					"two",
+					grpcStringEquals("one"),
+					grpcStringEquals("two"),
 				},
 			},
 			actual: metadata.MD{
@@ -479,8 +446,8 @@ func TestAreMetadataEqual(t *testing.T) {
 		},
 		{
 			name: "additional actual key ignored",
-			expected: map[string][]string{
-				"x-request-id": {"one"},
+			expected: map[string][]matcher.String{
+				"x-request-id": {grpcStringEquals("one")},
 			},
 			actual: metadata.MD{
 				"x-request-id": {"one"},
@@ -490,26 +457,24 @@ func TestAreMetadataEqual(t *testing.T) {
 		},
 		{
 			name: "missing expected key",
-			expected: map[string][]string{
-				"x-request-id": {"one"},
+			expected: map[string][]matcher.String{
+				"x-request-id": {grpcStringEquals("one")},
 			},
 			actual: metadata.MD{},
-			want:   false,
 		},
 		{
 			name: "different value",
-			expected: map[string][]string{
-				"x-request-id": {"one"},
+			expected: map[string][]matcher.String{
+				"x-request-id": {grpcStringEquals("one")},
 			},
 			actual: metadata.MD{
 				"x-request-id": {"two"},
 			},
-			want: false,
 		},
 		{
 			name: "additional value for expected key",
-			expected: map[string][]string{
-				"x-request-id": {"one"},
+			expected: map[string][]matcher.String{
+				"x-request-id": {grpcStringEquals("one")},
 			},
 			actual: metadata.MD{
 				"x-request-id": {
@@ -517,7 +482,84 @@ func TestAreMetadataEqual(t *testing.T) {
 					"two",
 				},
 			},
-			want: false,
+		},
+		{
+			name: "metadata key case insensitive",
+			expected: map[string][]matcher.String{
+				"X-Request-Id": {grpcStringEquals("one")},
+			},
+			actual: metadata.MD{
+				"x-request-id": {"one"},
+			},
+			want: true,
+		},
+		{
+			name: "exists with value",
+			expected: map[string][]matcher.String{
+				"x-request-id": {
+					{Operator: matcher.StringMatchOperatorExists},
+				},
+			},
+			actual: metadata.MD{
+				"x-request-id": {"one"},
+			},
+			want: true,
+		},
+		{
+			name: "exists with empty value",
+			expected: map[string][]matcher.String{
+				"x-request-id": {
+					{Operator: matcher.StringMatchOperatorExists},
+				},
+			},
+			actual: metadata.MD{
+				"x-request-id": {""},
+			},
+			want: true,
+		},
+		{
+			name: "exists with missing key",
+			expected: map[string][]matcher.String{
+				"x-request-id": {
+					{Operator: matcher.StringMatchOperatorExists},
+				},
+			},
+			actual: metadata.MD{},
+		},
+		{
+			name: "nonempty with value",
+			expected: map[string][]matcher.String{
+				"x-request-id": {
+					{Operator: matcher.StringMatchOperatorNonEmpty},
+				},
+			},
+			actual: metadata.MD{
+				"x-request-id": {"one"},
+			},
+			want: true,
+		},
+		{
+			name: "nonempty with empty value",
+			expected: map[string][]matcher.String{
+				"x-request-id": {
+					{Operator: matcher.StringMatchOperatorNonEmpty},
+				},
+			},
+			actual: metadata.MD{
+				"x-request-id": {""},
+			},
+		},
+		{
+			name: "nonempty with multiple values",
+			expected: map[string][]matcher.String{
+				"x-request-id": {
+					{Operator: matcher.StringMatchOperatorNonEmpty},
+				},
+			},
+			actual: metadata.MD{
+				"x-request-id": {"", "one"},
+			},
+			want: true,
 		},
 	}
 
@@ -549,10 +591,7 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 		},
 	)
 	if err != nil {
-		t.Fatalf(
-			"cannot build request: %v",
-			err,
-		)
+		t.Fatalf("cannot build request: %v", err)
 	}
 
 	tests := []struct {
@@ -569,9 +608,9 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 				{
 					service: "users.v1.UserService",
 					method:  "GetUser",
-					message: &map[string]any{
+					message: grpcMessageMatcher(map[string]any{
 						"id": "42",
-					},
+					}),
 				},
 			},
 			expected: true,
@@ -580,24 +619,21 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 			name:       "metadata",
 			fullMethod: "/users.v1.UserService/GetUser",
 			metadata: metadata.MD{
-				"x-request-id": {
-					"two",
-					"one",
-				},
+				"x-request-id": {"two", "one"},
 			},
 			fixtures: []Fixture{
 				{
 					service: "users.v1.UserService",
 					method:  "GetUser",
-					metadata: map[string][]string{
+					metadata: map[string][]matcher.String{
 						"x-request-id": {
-							"one",
-							"two",
+							grpcStringEquals("one"),
+							grpcStringEquals("two"),
 						},
 					},
-					message: &map[string]any{
+					message: grpcMessageMatcher(map[string]any{
 						"id": "42",
-					},
+					}),
 				},
 			},
 			expected: true,
@@ -613,12 +649,12 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 				{
 					service: "users.v1.UserService",
 					method:  "GetUser",
-					metadata: map[string][]string{
-						"x-request-id": {"one"},
+					metadata: map[string][]matcher.String{
+						"x-request-id": {grpcStringEquals("one")},
 					},
-					message: &map[string]any{
+					message: grpcMessageMatcher(map[string]any{
 						"id": "42",
-					},
+					}),
 				},
 			},
 			expected: true,
@@ -630,12 +666,11 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 				{
 					service: "users.v1.AdminService",
 					method:  "GetUser",
-					message: &map[string]any{
+					message: grpcMessageMatcher(map[string]any{
 						"id": "42",
-					},
+					}),
 				},
 			},
-			expected: false,
 		},
 		{
 			name:       "different method",
@@ -644,12 +679,11 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 				{
 					service: "users.v1.UserService",
 					method:  "CreateUser",
-					message: &map[string]any{
+					message: grpcMessageMatcher(map[string]any{
 						"id": "42",
-					},
+					}),
 				},
 			},
-			expected: false,
 		},
 		{
 			name:       "different message",
@@ -658,12 +692,11 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 				{
 					service: "users.v1.UserService",
 					method:  "GetUser",
-					message: &map[string]any{
+					message: grpcMessageMatcher(map[string]any{
 						"id": "43",
-					},
+					}),
 				},
 			},
-			expected: false,
 		},
 		{
 			name:       "missing metadata",
@@ -672,15 +705,14 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 				{
 					service: "users.v1.UserService",
 					method:  "GetUser",
-					metadata: map[string][]string{
-						"x-request-id": {"one"},
+					metadata: map[string][]matcher.String{
+						"x-request-id": {grpcStringEquals("one")},
 					},
-					message: &map[string]any{
+					message: grpcMessageMatcher(map[string]any{
 						"id": "42",
-					},
+					}),
 				},
 			},
-			expected: false,
 		},
 		{
 			name:       "different metadata",
@@ -692,38 +724,106 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 				{
 					service: "users.v1.UserService",
 					method:  "GetUser",
-					metadata: map[string][]string{
-						"x-request-id": {"one"},
+					metadata: map[string][]matcher.String{
+						"x-request-id": {grpcStringEquals("one")},
 					},
-					message: &map[string]any{
+					message: grpcMessageMatcher(map[string]any{
 						"id": "42",
-					},
+					}),
 				},
 			},
-			expected: false,
 		},
 		{
 			name:       "additional value for specified metadata key",
 			fullMethod: "/users.v1.UserService/GetUser",
 			metadata: metadata.MD{
-				"x-request-id": {
-					"one",
-					"two",
-				},
+				"x-request-id": {"one", "two"},
 			},
 			fixtures: []Fixture{
 				{
 					service: "users.v1.UserService",
 					method:  "GetUser",
-					metadata: map[string][]string{
-						"x-request-id": {"one"},
+					metadata: map[string][]matcher.String{
+						"x-request-id": {grpcStringEquals("one")},
 					},
-					message: &map[string]any{
+					message: grpcMessageMatcher(map[string]any{
 						"id": "42",
+					}),
+				},
+			},
+		},
+		{
+			name:       "message expectation omitted",
+			fullMethod: "/users.v1.UserService/GetUser",
+			fixtures: []Fixture{
+				{
+					service: "users.v1.UserService",
+					method:  "GetUser",
+				},
+			},
+			expected: true,
+		},
+		{
+			name:       "message nonempty matches",
+			fullMethod: "/users.v1.UserService/GetUser",
+			fixtures: []Fixture{
+				{
+					service: "users.v1.UserService",
+					method:  "GetUser",
+					message: &matcher.GRPCMessage{
+						Operator: matcher.GRPCMessageMatchOperatorNonEmpty,
 					},
 				},
 			},
-			expected: false,
+			expected: true,
+		},
+		{
+			name:       "explicit empty message does not match",
+			fullMethod: "/users.v1.UserService/GetUser",
+			fixtures: []Fixture{
+				{
+					service: "users.v1.UserService",
+					method:  "GetUser",
+					message: grpcMessageMatcher(map[string]any{}),
+				},
+			},
+		},
+		{
+			name:       "metadata exists with empty value",
+			fullMethod: "/users.v1.UserService/GetUser",
+			metadata: metadata.MD{
+				"x-request-id": {""},
+			},
+			fixtures: []Fixture{
+				{
+					service: "users.v1.UserService",
+					method:  "GetUser",
+					metadata: map[string][]matcher.String{
+						"x-request-id": {
+							{Operator: matcher.StringMatchOperatorExists},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name:       "metadata nonempty rejects empty value",
+			fullMethod: "/users.v1.UserService/GetUser",
+			metadata: metadata.MD{
+				"x-request-id": {""},
+			},
+			fixtures: []Fixture{
+				{
+					service: "users.v1.UserService",
+					method:  "GetUser",
+					metadata: map[string][]matcher.String{
+						"x-request-id": {
+							{Operator: matcher.StringMatchOperatorNonEmpty},
+						},
+					},
+				},
+			},
 		},
 	}
 
@@ -737,7 +837,6 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 				tt.fullMethod,
 				request,
 				tt.metadata,
-				method,
 			)
 			if err != nil {
 				t.Fatalf(
@@ -754,6 +853,65 @@ func TestMockGRPCServiceMatch(t *testing.T) {
 				t.Errorf(
 					"expected no fixture, got %+v",
 					fixture,
+				)
+			}
+		})
+	}
+}
+
+func TestMockGRPCServiceMatchEmptyMessage(t *testing.T) {
+	method := testMethodDescriptor(t)
+
+	request := dynamicpb.NewMessage(method.Input())
+
+	tests := []struct {
+		name     string
+		message  *matcher.GRPCMessage
+		expected bool
+	}{
+		{
+			name:     "equals empty",
+			message:  grpcMessageMatcher(map[string]any{}),
+			expected: true,
+		},
+		{
+			name: "nonempty rejects empty message",
+			message: &matcher.GRPCMessage{
+				Operator: matcher.GRPCMessageMatchOperatorNonEmpty,
+			},
+		},
+		{
+			name:     "no message expectation",
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &MockGRPCService{
+				fixtures: []Fixture{
+					{
+						service: "users.v1.UserService",
+						method:  "GetUser",
+						message: tt.message,
+					},
+				},
+			}
+
+			fixture, err := service.match(
+				"/users.v1.UserService/GetUser",
+				request,
+				nil,
+			)
+			if err != nil {
+				t.Fatalf("match() error = %v", err)
+			}
+
+			if (fixture != nil) != tt.expected {
+				t.Errorf(
+					"expected match %v, got %v",
+					tt.expected,
+					fixture != nil,
 				)
 			}
 		})
@@ -783,9 +941,9 @@ func TestMockGRPCServiceMatchInvalidFixtureMessage(
 			{
 				service: "users.v1.UserService",
 				method:  "GetUser",
-				message: &map[string]any{
+				message: grpcMessageMatcher(map[string]any{
 					"unknown": "value",
-				},
+				}),
 			},
 		},
 	}
@@ -794,7 +952,6 @@ func TestMockGRPCServiceMatchInvalidFixtureMessage(
 		"/users.v1.UserService/GetUser",
 		request,
 		nil,
-		method,
 	)
 	if err == nil {
 		t.Fatal("expected error")
@@ -836,15 +993,11 @@ func TestMockGRPCServiceMountCanceledContext(
 	}
 
 	if service.listener != nil {
-		t.Error(
-			"expected listener not to be created",
-		)
+		t.Error("expected listener not to be created")
 	}
 
 	if service.server != nil {
-		t.Error(
-			"expected server not to be created",
-		)
+		t.Error("expected server not to be created")
 	}
 }
 
@@ -896,13 +1049,9 @@ func testMethodDescriptor(
 		)
 	}
 
-	method := service.Methods().ByName(
-		"GetUser",
-	)
+	method := service.Methods().ByName("GetUser")
 	if method == nil {
-		t.Fatal(
-			"GetUser method not found",
-		)
+		t.Fatal("GetUser method not found")
 	}
 
 	return method
@@ -917,15 +1066,11 @@ func testMessageDescriptor(
 }
 
 func testFileDescriptorSet() *descriptorpb.FileDescriptorSet {
-	optional :=
-		descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL
-	repeated :=
-		descriptorpb.FieldDescriptorProto_LABEL_REPEATED
+	optional := descriptorpb.FieldDescriptorProto_LABEL_OPTIONAL
+	repeated := descriptorpb.FieldDescriptorProto_LABEL_REPEATED
 
-	stringType :=
-		descriptorpb.FieldDescriptorProto_TYPE_STRING
-	boolType :=
-		descriptorpb.FieldDescriptorProto_TYPE_BOOL
+	stringType := descriptorpb.FieldDescriptorProto_TYPE_STRING
+	boolType := descriptorpb.FieldDescriptorProto_TYPE_BOOL
 
 	return &descriptorpb.FileDescriptorSet{
 		File: []*descriptorpb.FileDescriptorProto{
@@ -935,30 +1080,22 @@ func testFileDescriptorSet() *descriptorpb.FileDescriptorSet {
 				Syntax:  proto.String("proto3"),
 				MessageType: []*descriptorpb.DescriptorProto{
 					{
-						Name: proto.String(
-							"GetUserRequest",
-						),
+						Name: proto.String("GetUserRequest"),
 						Field: []*descriptorpb.FieldDescriptorProto{
 							{
-								Name: proto.String(
-									"id",
-								),
+								Name:   proto.String("id"),
 								Number: proto.Int32(1),
 								Label:  &optional,
 								Type:   &stringType,
 							},
 							{
-								Name: proto.String(
-									"active",
-								),
+								Name:   proto.String("active"),
 								Number: proto.Int32(2),
 								Label:  &optional,
 								Type:   &boolType,
 							},
 							{
-								Name: proto.String(
-									"tags",
-								),
+								Name:   proto.String("tags"),
 								Number: proto.Int32(3),
 								Label:  &repeated,
 								Type:   &stringType,
@@ -966,14 +1103,10 @@ func testFileDescriptorSet() *descriptorpb.FileDescriptorSet {
 						},
 					},
 					{
-						Name: proto.String(
-							"GetUserResponse",
-						),
+						Name: proto.String("GetUserResponse"),
 						Field: []*descriptorpb.FieldDescriptorProto{
 							{
-								Name: proto.String(
-									"name",
-								),
+								Name:   proto.String("name"),
 								Number: proto.Int32(1),
 								Label:  &optional,
 								Type:   &stringType,
@@ -983,14 +1116,10 @@ func testFileDescriptorSet() *descriptorpb.FileDescriptorSet {
 				},
 				Service: []*descriptorpb.ServiceDescriptorProto{
 					{
-						Name: proto.String(
-							"UserService",
-						),
+						Name: proto.String("UserService"),
 						Method: []*descriptorpb.MethodDescriptorProto{
 							{
-								Name: proto.String(
-									"GetUser",
-								),
+								Name: proto.String("GetUser"),
 								InputType: proto.String(
 									".users.v1.GetUserRequest",
 								),
@@ -1039,15 +1168,15 @@ func TestMockGRPCServiceHandle(t *testing.T) {
 			{
 				service: "users.v1.UserService",
 				method:  "GetUser",
-				metadata: map[string][]string{
+				metadata: map[string][]matcher.String{
 					"x-request-id": {
-						"one",
-						"two",
+						grpcStringEquals("one"),
+						grpcStringEquals("two"),
 					},
 				},
-				message: &map[string]any{
+				message: grpcMessageMatcher(map[string]any{
 					"id": "42",
-				},
+				}),
 				status: codes.OK,
 				responseMetadata: map[string][]string{
 					"x-response-id": {
@@ -1149,9 +1278,8 @@ func TestMockGRPCServiceHandle(t *testing.T) {
 		)
 	}
 
-	responseMetadata := header.Get(
-		"x-response-id",
-	)
+	responseMetadata := header.Get("x-response-id")
+
 	if len(responseMetadata) != 2 {
 		t.Fatalf(
 			"expected 2 response metadata values, got %v",
@@ -1159,10 +1287,7 @@ func TestMockGRPCServiceHandle(t *testing.T) {
 		)
 	}
 
-	if !containsString(
-		responseMetadata,
-		"three",
-	) {
+	if !containsString(responseMetadata, "three") {
 		t.Errorf(
 			"expected response metadata to contain %q, got %v",
 			"three",
@@ -1170,10 +1295,7 @@ func TestMockGRPCServiceHandle(t *testing.T) {
 		)
 	}
 
-	if !containsString(
-		responseMetadata,
-		"four",
-	) {
+	if !containsString(responseMetadata, "four") {
 		t.Errorf(
 			"expected response metadata to contain %q, got %v",
 			"four",
@@ -1186,9 +1308,7 @@ func TestMockGRPCServiceHandle(t *testing.T) {
 		ByName("name")
 
 	if name == nil {
-		t.Fatal(
-			"name field not found",
-		)
+		t.Fatal("name field not found")
 	}
 
 	if actual := response.Get(name).String(); actual != "Yaroslav" {
@@ -1211,4 +1331,25 @@ func containsString(
 	}
 
 	return false
+}
+
+func grpcMessageMatcher(
+	value map[string]any,
+) *matcher.GRPCMessage {
+	data, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+
+	return &matcher.GRPCMessage{
+		Operator: matcher.GRPCMessageMatchOperatorEquals,
+		Value:    string(data),
+	}
+}
+
+func grpcStringEquals(value string) matcher.String {
+	return matcher.String{
+		Operator: matcher.StringMatchOperatorEquals,
+		Value:    value,
+	}
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/e2engine/core/execute"
 	"github.com/e2engine/core/model"
+	"github.com/e2engine/core/model/matcher"
 )
 
 func TestBuildHTTPRequest(t *testing.T) {
@@ -471,7 +472,7 @@ func TestExecutorExecute(t *testing.T) {
 					},
 				},
 				Expect: model.ExpectSpec{
-					HTTP: &model.HTTPResponse{
+					HTTP: &model.HTTPResponsePattern{
 						StatusCode: nethttp.StatusOK,
 						BodyJSON: stringPtrExecutor(
 							`{"name":"test","id":42}`,
@@ -530,7 +531,7 @@ func TestExecutorExecute(t *testing.T) {
 
 	reporter.EXPECT().
 		AddHTTPResponseBodyJSON(
-			`{"id":42,"name":"test"}`,
+			[]byte(`{"id":42,"name":"test"}`),
 		)
 
 	err := executor.Execute(
@@ -547,6 +548,9 @@ func TestExecutorExecute(t *testing.T) {
 
 func stringPtrExecutor(
 	value string,
-) *string {
-	return &value
+) *matcher.String {
+	return &matcher.String{
+		Operator: matcher.StringMatchOperatorEquals,
+		Value:    value,
+	}
 }

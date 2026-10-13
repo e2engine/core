@@ -101,7 +101,7 @@ func (mr *MockexecutionReporterMockRecorder) AddGRPCResponseStatus(status any) *
 }
 
 // AddPayloadDeviation mocks base method.
-func (m *MockexecutionReporter) AddPayloadDeviation(deviation *model.TestExecutionDeviation) {
+func (m *MockexecutionReporter) AddPayloadDeviation(deviation *model.PayloadDeviation) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "AddPayloadDeviation", deviation)
 }

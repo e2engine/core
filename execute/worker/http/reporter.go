@@ -8,12 +8,12 @@ import (
 
 type executionReporter interface {
 	AddDeviation(deviation *model.TestExecutionDeviation)
-	AddPayloadDeviation(deviation *model.TestExecutionDeviation)
+	AddPayloadDeviation(deviation *model.PayloadDeviation)
 	AddHTTPRequest(req *http.Request)
 	AddHTTPResponseStatus(status int)
 	AddHTTPResponseHeaders(headers http.Header)
-	AddHTTPResponseBody(body string)
-	AddHTTPResponseBodyJSON(body string)
+	AddHTTPResponseBody(body []byte)
+	AddHTTPResponseBodyJSON(body []byte)
 }
 
 //go:generate go run -mod=mod go.uber.org/mock/mockgen -source=reporter.go -destination=mock_reporter_test.go -package=http
