@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	nethttp "net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/model"
+	"github.com/e2engine/core/model/matcher"
 	"github.com/e2engine/core/pkg/keys"
 )
 
@@ -22,8 +24,8 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 	}
 
 	type deviationCall struct {
-		payload   bool
-		deviation model.TestExecutionDeviation
+		deviation *model.TestExecutionDeviation
+		payload   *model.PayloadDeviation
 	}
 
 	tests := []struct {
@@ -32,28 +34,31 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 		status  int
 		body    string
 		headers nethttp.Header
-		expect  model.HTTPResponse
+		expect  model.HTTPResponsePattern
 
-		bodyCall   *bodyCall
+		bodyCall   bodyCall
 		deviations []deviationCall
 	}{
 		{
 			name:   "matching status without body expectation",
 			status: nethttp.StatusOK,
 			body:   `{"ignored":true}`,
-			expect: model.HTTPResponse{
+			expect: model.HTTPResponsePattern{
 				StatusCode: nethttp.StatusOK,
+			},
+			bodyCall: bodyCall{
+				value: `{"ignored":true}`,
 			},
 		},
 		{
 			name:   "status mismatch",
 			status: nethttp.StatusNotFound,
-			expect: model.HTTPResponse{
+			expect: model.HTTPResponsePattern{
 				StatusCode: nethttp.StatusOK,
 			},
 			deviations: []deviationCall{
 				{
-					deviation: model.TestExecutionDeviation{
+					deviation: &model.TestExecutionDeviation{
 						Field:    string(keys.FieldStatusCode),
 						Expected: "200",
 						Actual:   "404",
@@ -65,34 +70,46 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			name:   "matching JSON body",
 			status: nethttp.StatusOK,
 			body:   `{"name":"test","count":1}`,
-			expect: model.HTTPResponse{
+			expect: model.HTTPResponsePattern{
 				StatusCode: nethttp.StatusOK,
-				BodyJSON:   stringPtr(`{"count":1,"name":"test"}`),
+				BodyJSON:   stringMatcher(`{"count":1,"name":"test"}`),
 			},
-			bodyCall: &bodyCall{
+			bodyCall: bodyCall{
 				json:  true,
 				value: `{"name":"test","count":1}`,
+			},
+		},
+		{
+			name:   "matching JSON body with whitespace",
+			status: nethttp.StatusOK,
+			body:   "{\n  \"name\": \"test\"\n}\n",
+			expect: model.HTTPResponsePattern{
+				StatusCode: nethttp.StatusOK,
+				BodyJSON:   stringMatcher(`{"name":"test"}`),
+			},
+			bodyCall: bodyCall{
+				json:  true,
+				value: `{"name":"test"}`,
 			},
 		},
 		{
 			name:   "JSON body mismatch",
 			status: nethttp.StatusOK,
 			body:   `{"name":"actual"}`,
-			expect: model.HTTPResponse{
+			expect: model.HTTPResponsePattern{
 				StatusCode: nethttp.StatusOK,
-				BodyJSON:   stringPtr(`{"name":"expected"}`),
+				BodyJSON:   stringMatcher(`{"name":"expected"}`),
 			},
-			bodyCall: &bodyCall{
+			bodyCall: bodyCall{
 				json:  true,
 				value: `{"name":"actual"}`,
 			},
 			deviations: []deviationCall{
 				{
-					payload: true,
-					deviation: model.TestExecutionDeviation{
+					payload: &model.PayloadDeviation{
 						Field:    string(keys.FieldBodyJSON),
-						Expected: `{"name":"expected"}`,
-						Actual:   `{"name":"actual"}`,
+						Expected: stringMatcher(`{"name":"expected"}`),
+						Actual:   []byte(`{"name":"actual"}`),
 					},
 				},
 			},
@@ -101,20 +118,20 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			name:   "response body is not JSON",
 			status: nethttp.StatusOK,
 			body:   "hello",
-			expect: model.HTTPResponse{
+			expect: model.HTTPResponsePattern{
 				StatusCode: nethttp.StatusOK,
-				BodyJSON:   stringPtr(`{"message":"hello"}`),
+				BodyJSON:   stringMatcher(`{"message":"hello"}`),
 			},
-			bodyCall: &bodyCall{
+			bodyCall: bodyCall{
 				value: "hello",
+				json:  true,
 			},
 			deviations: []deviationCall{
 				{
-					payload: true,
-					deviation: model.TestExecutionDeviation{
+					payload: &model.PayloadDeviation{
 						Field:    string(keys.FieldBodyJSON),
-						Expected: `{"message":"hello"}`,
-						Actual:   "hello",
+						Expected: stringMatcher(`{"message":"hello"}`),
+						Actual:   []byte("hello"),
 						Message:  "response body is not valid JSON",
 					},
 				},
@@ -124,28 +141,27 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			name:   "status and body mismatch",
 			status: nethttp.StatusBadRequest,
 			body:   `{"actual":true}`,
-			expect: model.HTTPResponse{
+			expect: model.HTTPResponsePattern{
 				StatusCode: nethttp.StatusOK,
-				BodyJSON:   stringPtr(`{"expected":true}`),
+				BodyJSON:   stringMatcher(`{"expected":true}`),
 			},
-			bodyCall: &bodyCall{
+			bodyCall: bodyCall{
 				json:  true,
 				value: `{"actual":true}`,
 			},
 			deviations: []deviationCall{
 				{
-					deviation: model.TestExecutionDeviation{
+					deviation: &model.TestExecutionDeviation{
 						Field:    string(keys.FieldStatusCode),
 						Expected: "200",
 						Actual:   "400",
 					},
 				},
 				{
-					payload: true,
-					deviation: model.TestExecutionDeviation{
+					payload: &model.PayloadDeviation{
 						Field:    string(keys.FieldBodyJSON),
-						Expected: `{"expected":true}`,
-						Actual:   `{"actual":true}`,
+						Expected: stringMatcher(`{"expected":true}`),
+						Actual:   []byte(`{"actual":true}`),
 					},
 				},
 			},
@@ -154,11 +170,11 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			name:   "matching exact text body",
 			status: nethttp.StatusOK,
 			body:   "plain text body",
-			expect: model.HTTPResponse{
+			expect: model.HTTPResponsePattern{
 				StatusCode: nethttp.StatusOK,
-				Body:       stringPtr("plain text body"),
+				Body:       stringMatcher("plain text body"),
 			},
-			bodyCall: &bodyCall{
+			bodyCall: bodyCall{
 				value: "plain text body",
 			},
 		},
@@ -166,48 +182,147 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			name:   "mismatched exact text body",
 			status: nethttp.StatusOK,
 			body:   "actual text body",
-			expect: model.HTTPResponse{
+			expect: model.HTTPResponsePattern{
 				StatusCode: nethttp.StatusOK,
-				Body:       stringPtr("expected text body"),
+				Body:       stringMatcher("expected text body"),
 			},
-			bodyCall: &bodyCall{
+			bodyCall: bodyCall{
 				value: "actual text body",
 			},
 			deviations: []deviationCall{
 				{
-					payload: true,
-					deviation: model.TestExecutionDeviation{
+					payload: &model.PayloadDeviation{
 						Field:    string(keys.FieldBody),
-						Expected: "expected text body",
-						Actual:   "actual text body",
+						Expected: stringMatcher("expected text body"),
+						Actual:   []byte("actual text body"),
 					},
 				},
 			},
 		},
 		{
-			name:   "expected header is persisted",
+			name:   "exact body preserves trailing newline",
 			status: nethttp.StatusOK,
-			headers: nethttp.Header{
-				"X-Test": {"value"},
-			},
-			expect: model.HTTPResponse{
+			body:   "hello\n",
+			expect: model.HTTPResponsePattern{
 				StatusCode: nethttp.StatusOK,
-				Headers: map[string][]string{
-					"X-Test": {"value"},
+				Body:       stringMatcher("hello"),
+			},
+			bodyCall: bodyCall{
+				value: "hello\n",
+			},
+			deviations: []deviationCall{
+				{
+					payload: &model.PayloadDeviation{
+						Field:    string(keys.FieldBody),
+						Expected: stringMatcher("hello"),
+						Actual:   []byte("hello\n"),
+					},
 				},
 			},
 		},
 		{
-			name:   "unexpected header is not persisted",
+			name:   "matching empty body",
+			status: nethttp.StatusOK,
+			expect: model.HTTPResponsePattern{
+				StatusCode: nethttp.StatusOK,
+				Body:       stringMatcher(""),
+			},
+		},
+		{
+			name:   "nonempty body matches",
+			status: nethttp.StatusOK,
+			body:   "hello",
+			expect: model.HTTPResponsePattern{
+				StatusCode: nethttp.StatusOK,
+				Body:       stringMatcherOperator(matcher.StringMatchOperatorNonEmpty),
+			},
+			bodyCall: bodyCall{
+				value: "hello",
+			},
+		},
+		{
+			name:   "nonempty body mismatch",
+			status: nethttp.StatusOK,
+			expect: model.HTTPResponsePattern{
+				StatusCode: nethttp.StatusOK,
+				Body:       stringMatcherOperator(matcher.StringMatchOperatorNonEmpty),
+			},
+			deviations: []deviationCall{
+				{
+					payload: &model.PayloadDeviation{
+						Field:    string(keys.FieldBody),
+						Expected: stringMatcherOperator(matcher.StringMatchOperatorNonEmpty),
+						Actual:   []byte{},
+					},
+				},
+			},
+		},
+		{
+			name:   "exists body matches empty body",
+			status: nethttp.StatusOK,
+			expect: model.HTTPResponsePattern{
+				StatusCode: nethttp.StatusOK,
+				Body:       stringMatcherOperator(matcher.StringMatchOperatorExists),
+			},
+		},
+		{
+			name:   "nonempty JSON matches empty object",
+			status: nethttp.StatusOK,
+			body:   `{}`,
+			expect: model.HTTPResponsePattern{
+				StatusCode: nethttp.StatusOK,
+				BodyJSON:   stringMatcherOperator(matcher.StringMatchOperatorNonEmpty),
+			},
+			bodyCall: bodyCall{
+				json:  true,
+				value: `{}`,
+			},
+		},
+		{
+			name:   "nonempty JSON rejects empty body",
+			status: nethttp.StatusOK,
+			expect: model.HTTPResponsePattern{
+				StatusCode: nethttp.StatusOK,
+				BodyJSON:   stringMatcherOperator(matcher.StringMatchOperatorNonEmpty),
+			},
+			bodyCall: bodyCall{
+				json: true,
+			},
+			deviations: []deviationCall{
+				{
+					payload: &model.PayloadDeviation{
+						Field:    string(keys.FieldBodyJSON),
+						Expected: stringMatcherOperator(matcher.StringMatchOperatorNonEmpty),
+						Actual:   []byte{},
+						Message:  "response body is not valid JSON",
+					},
+				},
+			},
+		},
+		{
+			name:   "expected header matches",
+			status: nethttp.StatusOK,
+			headers: nethttp.Header{
+				"X-Test": {"value"},
+			},
+			expect: model.HTTPResponsePattern{
+				StatusCode: nethttp.StatusOK,
+				Headers: map[string][]matcher.String{
+					"X-Test": {stringMatcherValue("value")},
+				},
+			},
+		},
+		{
+			name:   "unexpected header is ignored",
 			status: nethttp.StatusOK,
 			headers: nethttp.Header{
 				"Authorization": {"secret"},
 				"X-Test":        {"value"},
 			},
-			expect: model.HTTPResponse{
+			expect: model.HTTPResponsePattern{
 				StatusCode: nethttp.StatusOK,
-				Headers: map[string][]string{
-					"X-Test": {"value"},
+				Headers: map[string][]matcher.String{
+					"X-Test": {stringMatcherValue("value")},
 				},
 			},
 		},
@@ -217,10 +332,10 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			headers: nethttp.Header{
 				"X-Test": {"value"},
 			},
-			expect: model.HTTPResponse{
+			expect: model.HTTPResponsePattern{
 				StatusCode: nethttp.StatusOK,
-				Headers: map[string][]string{
-					"x-test": {"value"},
+				Headers: map[string][]matcher.String{
+					"x-test": {stringMatcherValue("value")},
 				},
 			},
 		},
@@ -230,15 +345,15 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			headers: nethttp.Header{
 				"X-Test": {"actual"},
 			},
-			expect: model.HTTPResponse{
+			expect: model.HTTPResponsePattern{
 				StatusCode: nethttp.StatusOK,
-				Headers: map[string][]string{
-					"X-Test": {"expected"},
+				Headers: map[string][]matcher.String{
+					"X-Test": {stringMatcherValue("expected")},
 				},
 			},
 			deviations: []deviationCall{
 				{
-					deviation: model.TestExecutionDeviation{
+					deviation: &model.TestExecutionDeviation{
 						Field:    "headers.X-Test",
 						Expected: "expected",
 						Actual:   "actual",
@@ -252,18 +367,82 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			headers: nethttp.Header{
 				"X-Other": {"value"},
 			},
-			expect: model.HTTPResponse{
+			expect: model.HTTPResponsePattern{
 				StatusCode: nethttp.StatusOK,
-				Headers: map[string][]string{
-					"X-Test": {"expected"},
+				Headers: map[string][]matcher.String{
+					"X-Test": {stringMatcherValue("expected")},
 				},
 			},
 			deviations: []deviationCall{
 				{
-					deviation: model.TestExecutionDeviation{
+					deviation: &model.TestExecutionDeviation{
 						Field:    "headers.X-Test",
 						Expected: "expected",
-						Actual:   "",
+					},
+				},
+			},
+		},
+		{
+			name:   "header exists with empty value",
+			status: nethttp.StatusOK,
+			headers: nethttp.Header{
+				"X-Test": {""},
+			},
+			expect: model.HTTPResponsePattern{
+				StatusCode: nethttp.StatusOK,
+				Headers: map[string][]matcher.String{
+					"X-Test": {stringMatcherOperatorValue(matcher.StringMatchOperatorExists)},
+				},
+			},
+		},
+		{
+			name:   "header exists but is missing",
+			status: nethttp.StatusOK,
+			expect: model.HTTPResponsePattern{
+				StatusCode: nethttp.StatusOK,
+				Headers: map[string][]matcher.String{
+					"X-Test": {stringMatcherOperatorValue(matcher.StringMatchOperatorExists)},
+				},
+			},
+			deviations: []deviationCall{
+				{
+					deviation: &model.TestExecutionDeviation{
+						Field:    "headers.X-Test",
+						Expected: "exists",
+					},
+				},
+			},
+		},
+		{
+			name:   "nonempty header matches",
+			status: nethttp.StatusOK,
+			headers: nethttp.Header{
+				"X-Test": {"value"},
+			},
+			expect: model.HTTPResponsePattern{
+				StatusCode: nethttp.StatusOK,
+				Headers: map[string][]matcher.String{
+					"X-Test": {stringMatcherOperatorValue(matcher.StringMatchOperatorNonEmpty)},
+				},
+			},
+		},
+		{
+			name:   "nonempty header rejects empty value",
+			status: nethttp.StatusOK,
+			headers: nethttp.Header{
+				"X-Test": {""},
+			},
+			expect: model.HTTPResponsePattern{
+				StatusCode: nethttp.StatusOK,
+				Headers: map[string][]matcher.String{
+					"X-Test": {stringMatcherOperatorValue(matcher.StringMatchOperatorNonEmpty)},
+				},
+			},
+			deviations: []deviationCall{
+				{
+					deviation: &model.TestExecutionDeviation{
+						Field:    "headers.X-Test",
+						Expected: "nonempty",
 					},
 				},
 			},
@@ -292,27 +471,25 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 				AddHTTPResponseHeaders(tt.headers)
 
 			for _, deviation := range tt.deviations {
-				if deviation.payload {
+				if deviation.payload != nil {
 					reporter.EXPECT().
-						AddPayloadDeviation(&deviation.deviation)
+						AddPayloadDeviation(deviation.payload)
 				} else {
 					reporter.EXPECT().
-						AddDeviation(&deviation.deviation)
+						AddDeviation(deviation.deviation)
 				}
 			}
 
-			if tt.bodyCall != nil {
-				if tt.bodyCall.json {
-					reporter.EXPECT().
-						AddHTTPResponseBodyJSON(
-							tt.bodyCall.value,
-						)
-				} else {
-					reporter.EXPECT().
-						AddHTTPResponseBody(
-							tt.bodyCall.value,
-						)
-				}
+			if tt.bodyCall.json {
+				reporter.EXPECT().
+					AddHTTPResponseBodyJSON(
+						[]byte(tt.bodyCall.value),
+					)
+			} else {
+				reporter.EXPECT().
+					AddHTTPResponseBody(
+						[]byte(tt.bodyCall.value),
+					)
 			}
 
 			err := evaluator.EvaluateResponse(
@@ -352,9 +529,9 @@ func TestEvaluatorEvaluateResponseReadError(t *testing.T) {
 
 	err := evaluator.EvaluateResponse(
 		response,
-		&model.HTTPResponse{
+		&model.HTTPResponsePattern{
 			StatusCode: nethttp.StatusOK,
-			BodyJSON:   stringPtr(`{"result":"ok"}`),
+			BodyJSON:   stringMatcher(`{"result":"ok"}`),
 		},
 	)
 
@@ -395,7 +572,7 @@ func TestEvaluatorMatches(t *testing.T) {
 				HTTP: &model.HTTPRequestPattern{
 					Method:   "POST",
 					Path:     "/users",
-					BodyJSON: stringPtr(`{"name":"Yaroslav"}`),
+					BodyJSON: stringMatcher(`{"name":"Yaroslav"}`),
 				},
 			},
 			match: true,
@@ -448,7 +625,7 @@ func TestEvaluatorMatches(t *testing.T) {
 
 			evaluator := NewEvaluator(reporter)
 
-			match, err := evaluator.Matches(
+			matched, err := evaluator.Matches(
 				context.Background(),
 				&model.ServiceSpec{},
 				tt.actual,
@@ -461,11 +638,11 @@ func TestEvaluatorMatches(t *testing.T) {
 				)
 			}
 
-			if match != tt.match {
+			if matched != tt.match {
 				t.Errorf(
 					"expected match %v, got %v",
 					tt.match,
-					match,
+					matched,
 				)
 			}
 		})
@@ -483,6 +660,7 @@ func TestHTTPCallMatchesExpectation(t *testing.T) {
 		Headers: nethttp.Header{
 			"Content-Type": {"application/json"},
 			"X-Test":       {"one", "two"},
+			"X-Empty":      {""},
 		},
 		Body: []byte(`{"name":"Yaroslav","active":true}`),
 	}
@@ -508,11 +686,14 @@ func TestHTTPCallMatchesExpectation(t *testing.T) {
 					"active": {"true"},
 					"role":   {"admin", "user"},
 				},
-				Headers: map[string][]string{
-					"Content-Type": {"application/json"},
-					"X-Test":       {"one", "two"},
+				Headers: map[string][]matcher.String{
+					"Content-Type": {stringMatcherValue("application/json")},
+					"X-Test": {
+						stringMatcherValue("one"),
+						stringMatcherValue("two"),
+					},
 				},
-				BodyJSON: stringPtr(
+				BodyJSON: stringMatcher(
 					`{"active":true,"name":"Yaroslav"}`,
 				),
 			},
@@ -549,24 +730,27 @@ func TestHTTPCallMatchesExpectation(t *testing.T) {
 		{
 			name: "header missing",
 			expected: model.HTTPRequestPattern{
-				Headers: map[string][]string{
-					"X-Missing": {"value"},
+				Headers: map[string][]matcher.String{
+					"X-Missing": {stringMatcherValue("value")},
 				},
 			},
 		},
 		{
 			name: "header mismatch",
 			expected: model.HTTPRequestPattern{
-				Headers: map[string][]string{
-					"Content-Type": {"text/plain"},
+				Headers: map[string][]matcher.String{
+					"Content-Type": {stringMatcherValue("text/plain")},
 				},
 			},
 		},
 		{
 			name: "header name is case insensitive",
 			expected: model.HTTPRequestPattern{
-				Headers: map[string][]string{
-					"x-test": {"one", "two"},
+				Headers: map[string][]matcher.String{
+					"x-test": {
+						stringMatcherValue("one"),
+						stringMatcherValue("two"),
+					},
 				},
 			},
 			match: true,
@@ -574,7 +758,7 @@ func TestHTTPCallMatchesExpectation(t *testing.T) {
 		{
 			name: "JSON body mismatch",
 			expected: model.HTTPRequestPattern{
-				BodyJSON: stringPtr(
+				BodyJSON: stringMatcher(
 					`{"name":"Other"}`,
 				),
 			},
@@ -582,7 +766,7 @@ func TestHTTPCallMatchesExpectation(t *testing.T) {
 		{
 			name: "actual body is invalid JSON",
 			expected: model.HTTPRequestPattern{
-				BodyJSON: stringPtr(
+				BodyJSON: stringMatcher(
 					`{"name":"Yaroslav"}`,
 				),
 			},
@@ -591,7 +775,7 @@ func TestHTTPCallMatchesExpectation(t *testing.T) {
 		{
 			name: "exact text body matches",
 			expected: model.HTTPRequestPattern{
-				Body: stringPtr(
+				Body: stringMatcher(
 					`{"name":"Yaroslav","active":true}`,
 				),
 			},
@@ -600,7 +784,7 @@ func TestHTTPCallMatchesExpectation(t *testing.T) {
 		{
 			name: "exact text body mismatch",
 			expected: model.HTTPRequestPattern{
-				Body: stringPtr(
+				Body: stringMatcher(
 					`{"active":true,"name":"Yaroslav"}`,
 				),
 			},
@@ -617,8 +801,8 @@ func TestHTTPCallMatchesExpectation(t *testing.T) {
 		{
 			name: "headers subset matches",
 			expected: model.HTTPRequestPattern{
-				Headers: map[string][]string{
-					"Content-Type": {"application/json"},
+				Headers: map[string][]matcher.String{
+					"Content-Type": {stringMatcherValue("application/json")},
 				},
 			},
 			match: true,
@@ -635,25 +819,109 @@ func TestHTTPCallMatchesExpectation(t *testing.T) {
 		{
 			name: "header values match regardless of order",
 			expected: model.HTTPRequestPattern{
-				Headers: map[string][]string{
-					"X-Test": {"two", "one"},
+				Headers: map[string][]matcher.String{
+					"X-Test": {
+						stringMatcherValue("two"),
+						stringMatcherValue("one"),
+					},
 				},
 			},
 			match: true,
 		},
 		{
+			name: "header exists",
+			expected: model.HTTPRequestPattern{
+				Headers: map[string][]matcher.String{
+					"X-Test": {
+						stringMatcherOperatorValue(matcher.StringMatchOperatorExists),
+					},
+				},
+			},
+			match: true,
+		},
+		{
+			name: "header exists with empty value",
+			expected: model.HTTPRequestPattern{
+				Headers: map[string][]matcher.String{
+					"X-Empty": {
+						stringMatcherOperatorValue(matcher.StringMatchOperatorExists),
+					},
+				},
+			},
+			match: true,
+		},
+		{
+			name: "header exists but is missing",
+			expected: model.HTTPRequestPattern{
+				Headers: map[string][]matcher.String{
+					"X-Missing": {
+						stringMatcherOperatorValue(matcher.StringMatchOperatorExists),
+					},
+				},
+			},
+		},
+		{
+			name: "header nonempty",
+			expected: model.HTTPRequestPattern{
+				Headers: map[string][]matcher.String{
+					"X-Test": {
+						stringMatcherOperatorValue(matcher.StringMatchOperatorNonEmpty),
+					},
+				},
+			},
+			match: true,
+		},
+		{
+			name: "header nonempty rejects empty value",
+			expected: model.HTTPRequestPattern{
+				Headers: map[string][]matcher.String{
+					"X-Empty": {
+						stringMatcherOperatorValue(matcher.StringMatchOperatorNonEmpty),
+					},
+				},
+			},
+		},
+		{
 			name: "explicit empty body matches empty body",
 			expected: model.HTTPRequestPattern{
-				Body: stringPtr(""),
+				Body: stringMatcher(""),
 			},
 			body:  []byte{},
 			match: true,
 		},
 		{
-			name: "explicit empty body does not match non-empty body",
+			name: "explicit empty body does not match nonempty body",
 			expected: model.HTTPRequestPattern{
-				Body: stringPtr(""),
+				Body: stringMatcher(""),
 			},
+		},
+		{
+			name: "nonempty body matches",
+			expected: model.HTTPRequestPattern{
+				Body: stringMatcherOperator(matcher.StringMatchOperatorNonEmpty),
+			},
+			match: true,
+		},
+		{
+			name: "nonempty body rejects empty body",
+			expected: model.HTTPRequestPattern{
+				Body: stringMatcherOperator(matcher.StringMatchOperatorNonEmpty),
+			},
+			body: []byte{},
+		},
+		{
+			name: "JSON nonempty matches",
+			expected: model.HTTPRequestPattern{
+				BodyJSON: stringMatcherOperator(matcher.StringMatchOperatorNonEmpty),
+			},
+			match: true,
+		},
+		{
+			name: "JSON exists matches",
+			expected: model.HTTPRequestPattern{
+				BodyJSON: stringMatcherOperator(matcher.StringMatchOperatorExists),
+			},
+			match: true,
 		},
 	}
 
@@ -665,16 +933,16 @@ func TestHTTPCallMatchesExpectation(t *testing.T) {
 				request.Body = tt.body
 			}
 
-			match := httpCallMatchesExpectation(
+			matched := httpCallMatchesExpectation(
 				request,
 				&tt.expected,
 			)
 
-			if match != tt.match {
+			if matched != tt.match {
 				t.Errorf(
 					"expected match %v, got %v",
 					tt.match,
-					match,
+					matched,
 				)
 			}
 		})
@@ -732,12 +1000,9 @@ func TestEvaluatorDeviation(t *testing.T) {
 						Headers: func() nethttp.Header {
 							headers := make(nethttp.Header)
 							headers.Set(
-								string(
-									keys.E2EngineMockMissHeader,
-								),
+								string(keys.E2EngineMockMissHeader),
 								"true",
 							)
-
 							return headers
 						}(),
 					},
@@ -759,26 +1024,11 @@ func TestEvaluatorDeviation(t *testing.T) {
 				tt.actual,
 			)
 
-			if tt.expected == nil {
-				if actual != nil {
-					t.Fatalf(
-						"expected no deviation, got %+v",
-						actual,
-					)
-				}
-
-				return
-			}
-
-			if actual == nil {
-				t.Fatal("expected deviation")
-			}
-
-			if *actual != *tt.expected {
+			if !reflect.DeepEqual(actual, tt.expected) {
 				t.Errorf(
 					"expected deviation %+v, got %+v",
-					*tt.expected,
-					*actual,
+					tt.expected,
+					actual,
 				)
 			}
 		})
@@ -789,9 +1039,7 @@ type errorReader struct {
 	err error
 }
 
-func (r *errorReader) Read(
-	_ []byte,
-) (int, error) {
+func (r *errorReader) Read(_ []byte) (int, error) {
 	return 0, r.err
 }
 
@@ -799,6 +1047,32 @@ func (r *errorReader) Close() error {
 	return nil
 }
 
-func stringPtr(value string) *string {
-	return &value
+func stringMatcher(value string) *matcher.String {
+	return &matcher.String{
+		Operator: matcher.StringMatchOperatorEquals,
+		Value:    value,
+	}
+}
+
+func stringMatcherValue(value string) matcher.String {
+	return matcher.String{
+		Operator: matcher.StringMatchOperatorEquals,
+		Value:    value,
+	}
+}
+
+func stringMatcherOperator(
+	operator matcher.StringMatchOperator,
+) *matcher.String {
+	return &matcher.String{
+		Operator: operator,
+	}
+}
+
+func stringMatcherOperatorValue(
+	operator matcher.StringMatchOperator,
+) matcher.String {
+	return matcher.String{
+		Operator: operator,
+	}
 }

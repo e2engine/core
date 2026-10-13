@@ -17,7 +17,9 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/dynamicpb"
 
+	"github.com/e2engine/core/execute/match"
 	"github.com/e2engine/core/model"
+	"github.com/e2engine/core/model/matcher"
 	"github.com/e2engine/core/pkg/errors"
 	"github.com/e2engine/core/pkg/keys"
 	"github.com/e2engine/core/pkg/log"
@@ -46,8 +48,8 @@ type MethodResolver interface {
 type Fixture struct {
 	service  string
 	method   string
-	metadata map[string][]string
-	message  *map[string]any
+	metadata map[string][]matcher.String
+	message  *matcher.GRPCMessage
 
 	status           codes.Code
 	responseMetadata map[string][]string
@@ -209,7 +211,6 @@ func (s *MockGRPCService) handle(
 		fullMethod,
 		request,
 		incomingMetadata,
-		method,
 	)
 	if err != nil {
 		return status.Error(
@@ -290,13 +291,9 @@ func (s *MockGRPCService) match(
 	fullMethod string,
 	actual proto.Message,
 	actualMetadata metadata.MD,
-	method protoreflect.MethodDescriptor,
 ) (*Fixture, error) {
 	service, methodName, _ := strings.Cut(
-		strings.TrimPrefix(
-			fullMethod,
-			"/",
-		),
+		strings.TrimPrefix(fullMethod, "/"),
 		"/",
 	)
 
@@ -319,32 +316,20 @@ func (s *MockGRPCService) match(
 			return fixture, nil
 		}
 
-		expected, err := buildMessage(
-			method.Input(),
-			*fixture.message,
+		matched, err := match.IsGRPCMessageMatched(
+			actual,
+			fixture.message,
 		)
 		if err != nil {
 			return nil, errorc.With(
 				errors.ErrCannotBuildGRPCMessage,
-				errorc.String(
-					keys.GRPCMethod,
-					fullMethod,
-				),
-				errorc.String(
-					keys.Operation,
-					"build fixture request message",
-				),
-				errorc.Error(
-					keys.Cause,
-					err,
-				),
+				errorc.String(keys.GRPCMethod, fullMethod),
+				errorc.String(keys.Operation, "match fixture request message"),
+				errorc.Error(keys.Cause, err),
 			)
 		}
 
-		if proto.Equal(
-			expected,
-			actual,
-		) {
+		if matched {
 			return fixture, nil
 		}
 	}
@@ -353,32 +338,18 @@ func (s *MockGRPCService) match(
 }
 
 func areMetadataEqual(
-	expected map[string][]string,
+	expected map[string][]matcher.String,
 	actual metadata.MD,
 ) bool {
 	for key, expectedValues := range expected {
-		actualValues := actual.Get(key)
+		actualValues, exists := actual[strings.ToLower(key)]
 
-		if len(expectedValues) !=
-			len(actualValues) {
+		if !match.IsStringSliceMatched(
+			actualValues,
+			exists,
+			expectedValues,
+		) {
 			return false
-		}
-
-		expectedCounts := make(
-			map[string]int,
-			len(expectedValues),
-		)
-
-		for _, value := range expectedValues {
-			expectedCounts[value]++
-		}
-
-		for _, value := range actualValues {
-			if expectedCounts[value] == 0 {
-				return false
-			}
-
-			expectedCounts[value]--
 		}
 	}
 
@@ -444,11 +415,6 @@ func compileFixtures(
 	for i := range specs {
 		spec := &specs[i]
 
-		if spec.When.GRPC == nil ||
-			spec.Then.GRPC == nil {
-			continue
-		}
-
 		fixture := Fixture{
 			service:  spec.When.GRPC.Service,
 			method:   spec.When.GRPC.Method,
@@ -465,7 +431,7 @@ func compileFixtures(
 		}
 
 		if spec.Then.GRPC.Message != nil {
-			fixture.response = *spec.Then.GRPC.Message
+			fixture.response = spec.Then.GRPC.Message
 		}
 
 		fixtures = append(
@@ -478,59 +444,11 @@ func compileFixtures(
 }
 
 func grpcCode(value string) codes.Code {
-	switch strings.ToLower(value) {
-	case "", "ok":
-		return codes.OK
-
-	case "cancelled":
-		return codes.Canceled
-
-	case "unknown":
-		return codes.Unknown
-
-	case "invalid_argument":
-		return codes.InvalidArgument
-
-	case "deadline_exceeded":
-		return codes.DeadlineExceeded
-
-	case "not_found":
-		return codes.NotFound
-
-	case "already_exists":
-		return codes.AlreadyExists
-
-	case "permission_denied":
-		return codes.PermissionDenied
-
-	case "resource_exhausted":
-		return codes.ResourceExhausted
-
-	case "failed_precondition":
-		return codes.FailedPrecondition
-
-	case "aborted":
-		return codes.Aborted
-
-	case "out_of_range":
-		return codes.OutOfRange
-
-	case "unimplemented":
-		return codes.Unimplemented
-
-	case "internal":
-		return codes.Internal
-
-	case "unavailable":
-		return codes.Unavailable
-
-	case "data_loss":
-		return codes.DataLoss
-
-	case "unauthenticated":
-		return codes.Unauthenticated
-
-	default:
-		return codes.Unknown
+	for code := codes.OK; code <= codes.Unauthenticated; code++ {
+		if code.String() == value {
+			return code
+		}
 	}
+
+	panic("invalid gRPC status")
 }

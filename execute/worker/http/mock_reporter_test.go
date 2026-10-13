@@ -66,7 +66,7 @@ func (mr *MockexecutionReporterMockRecorder) AddHTTPRequest(req any) *gomock.Cal
 }
 
 // AddHTTPResponseBody mocks base method.
-func (m *MockexecutionReporter) AddHTTPResponseBody(body string) {
+func (m *MockexecutionReporter) AddHTTPResponseBody(body []byte) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "AddHTTPResponseBody", body)
 }
@@ -78,7 +78,7 @@ func (mr *MockexecutionReporterMockRecorder) AddHTTPResponseBody(body any) *gomo
 }
 
 // AddHTTPResponseBodyJSON mocks base method.
-func (m *MockexecutionReporter) AddHTTPResponseBodyJSON(body string) {
+func (m *MockexecutionReporter) AddHTTPResponseBodyJSON(body []byte) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "AddHTTPResponseBodyJSON", body)
 }
@@ -114,7 +114,7 @@ func (mr *MockexecutionReporterMockRecorder) AddHTTPResponseStatus(status any) *
 }
 
 // AddPayloadDeviation mocks base method.
-func (m *MockexecutionReporter) AddPayloadDeviation(deviation *model.TestExecutionDeviation) {
+func (m *MockexecutionReporter) AddPayloadDeviation(deviation *model.PayloadDeviation) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "AddPayloadDeviation", deviation)
 }

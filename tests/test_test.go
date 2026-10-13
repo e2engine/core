@@ -476,7 +476,7 @@ func validTestSpec() model.TestSpec {
 			},
 		},
 		Expect: model.ExpectSpec{
-			HTTP: &model.HTTPResponse{
+			HTTP: &model.HTTPResponsePattern{
 				StatusCode: 200,
 			},
 		},

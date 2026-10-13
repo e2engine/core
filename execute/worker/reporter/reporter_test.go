@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/e2engine/core/model"
+	"github.com/e2engine/core/model/matcher"
 )
 
 func TestNew(t *testing.T) {
@@ -79,16 +80,17 @@ func TestReporterSetError(t *testing.T) {
 	}
 
 	mustPanic(t, func() {
-		r.AddDeviation(
-			&model.TestExecutionDeviation{},
-		)
+		r.AddDeviation(&model.TestExecutionDeviation{})
+	})
+
+	mustPanic(t, func() {
+		r.AddPayloadDeviation(&model.PayloadDeviation{})
 	})
 }
 
 func TestReporterFinalize(t *testing.T) {
 	tests := []struct {
-		name string
-
+		name         string
 		addDeviation bool
 		expected     model.ExecutionStatus
 	}{
@@ -188,29 +190,76 @@ func TestReporterAddDeviation(t *testing.T) {
 }
 
 func TestReporterAddPayloadDeviation(t *testing.T) {
-	deviation := &model.TestExecutionDeviation{
-		Field:    "body",
-		Expected: "expected payload",
-		Actual:   "actual payload",
-		Message:  "payload differs",
-	}
-
 	tests := []struct {
 		name string
 
 		dumpPayload bool
+		expected    *matcher.String
+		actual      []byte
 
-		expectedExpected string
-		expectedActual   string
+		wantExpected string
+		wantActual   string
 	}{
 		{
 			name: "payload disabled",
+			expected: &matcher.String{
+				Operator: matcher.StringMatchOperatorEquals,
+				Value:    "expected payload",
+			},
+			actual:       []byte("actual payload"),
+			wantExpected: "<dump disabled>",
+			wantActual:   "<dump disabled>",
 		},
 		{
-			name:             "payload enabled",
-			dumpPayload:      true,
-			expectedExpected: deviation.Expected,
-			expectedActual:   deviation.Actual,
+			name:        "payload enabled",
+			dumpPayload: true,
+			expected: &matcher.String{
+				Operator: matcher.StringMatchOperatorEquals,
+				Value:    "expected payload",
+			},
+			actual:       []byte("actual payload"),
+			wantExpected: "expected payload",
+			wantActual:   "actual payload",
+		},
+		{
+			name: "nonempty matcher with dumping disabled",
+			expected: &matcher.String{
+				Operator: matcher.StringMatchOperatorNonEmpty,
+			},
+			actual:       []byte("actual payload"),
+			wantExpected: "<dump disabled>",
+			wantActual:   "<dump disabled>",
+		},
+		{
+			name:        "nonempty matcher with dumping enabled",
+			dumpPayload: true,
+			expected: &matcher.String{
+				Operator: matcher.StringMatchOperatorNonEmpty,
+			},
+			actual:       []byte("actual payload"),
+			wantExpected: "nonempty",
+			wantActual:   "actual payload",
+		},
+		{
+			name: "empty actual payload",
+			expected: &matcher.String{
+				Operator: matcher.StringMatchOperatorNonEmpty,
+			},
+			wantExpected: "<dump disabled>",
+		},
+		{
+			name:        "empty actual payload with dumping enabled",
+			dumpPayload: true,
+			expected: &matcher.String{
+				Operator: matcher.StringMatchOperatorNonEmpty,
+			},
+			wantExpected: "nonempty",
+		},
+		{
+			name:         "nil expected matcher",
+			actual:       []byte("actual payload"),
+			wantExpected: "<dump disabled>",
+			wantActual:   "<dump disabled>",
 		},
 	}
 
@@ -225,45 +274,52 @@ func TestReporterAddPayloadDeviation(t *testing.T) {
 
 			r.AddPayloadDeviation(nil)
 
-			r.AddPayloadDeviation(deviation)
+			r.AddPayloadDeviation(&model.PayloadDeviation{
+				Field:    "body",
+				Expected: tt.expected,
+				Actual:   tt.actual,
+				Message:  "payload differs",
+			})
 
-			if len(r.Result().Summary.Deviations) != 1 {
+			deviations := r.Result().Summary.Deviations
+
+			if len(deviations) != 1 {
 				t.Fatalf(
 					"expected 1 deviation, got %d",
-					len(r.Result().Summary.Deviations),
+					len(deviations),
 				)
 			}
 
-			actual := r.Result().Summary.Deviations[0]
+			actual := deviations[0]
 
-			if actual.Field != deviation.Field {
+			if actual.Field != "body" {
 				t.Errorf(
 					"expected field %q, got %q",
-					deviation.Field,
+					"body",
 					actual.Field,
 				)
 			}
 
-			if actual.Message != deviation.Message {
+			if actual.Message != "payload differs" {
 				t.Errorf(
 					"expected message %q, got %q",
-					deviation.Message,
+					"payload differs",
 					actual.Message,
 				)
 			}
 
-			if actual.Expected != tt.expectedExpected {
+			if actual.Expected != tt.wantExpected {
 				t.Errorf(
 					"expected Expected %q, got %q",
-					tt.expectedExpected,
+					tt.wantExpected,
 					actual.Expected,
 				)
 			}
 
-			if actual.Actual != tt.expectedActual {
+			if actual.Actual != tt.wantActual {
 				t.Errorf(
 					"expected Actual %q, got %q",
-					tt.expectedActual,
+					tt.wantActual,
 					actual.Actual,
 				)
 			}
@@ -281,7 +337,9 @@ func TestReporterAddHTTPRequest(t *testing.T) {
 		expectedBodyJSON string
 	}{
 		{
-			name: "payload disabled",
+			name:             "payload disabled",
+			expectedBody:     "<dump disabled>",
+			expectedBodyJSON: "<dump disabled>",
 		},
 		{
 			name:             "payload enabled",
@@ -328,6 +386,10 @@ func TestReporterAddHTTPRequest(t *testing.T) {
 
 			r.AddHTTPRequest(req)
 
+			if r.Result().Summary.Request == nil {
+				t.Fatal("expected request summary")
+			}
+
 			actual := r.Result().Summary.Request.HTTP
 
 			if actual == nil {
@@ -355,7 +417,7 @@ func TestReporterAddHTTPRequest(t *testing.T) {
 				map[string][]string(req.Header),
 			) {
 				t.Errorf(
-					"expected headers %#+v, got %#+v",
+					"expected headers %+v, got %+v",
 					req.Header,
 					actual.Headers,
 				)
@@ -380,11 +442,43 @@ func TestReporterAddHTTPRequest(t *testing.T) {
 			req.Header["X-Test"][0] = "changed"
 
 			if actual.Headers["X-Test"][0] != "one" {
-				t.Error(
-					"stored headers changed with source",
-				)
+				t.Error("stored headers changed with source")
 			}
 		})
+	}
+}
+
+func TestReporterAddHTTPRequestWithoutBody(t *testing.T) {
+	spec := &model.TestSpec{
+		Request: model.RequestSpec{
+			HTTP: &model.HTTPRequest{},
+		},
+	}
+
+	r := newReporterForTest(
+		&Config{},
+		spec,
+	)
+
+	req, err := http.NewRequest(
+		http.MethodGet,
+		"http://example.com/resource",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r.AddHTTPRequest(req)
+
+	actual := r.Result().Summary.Request.HTTP
+
+	if actual.Body != "" || actual.BodyJSON != "" {
+		t.Errorf(
+			"expected omitted body fields, got body=%q body_json=%q",
+			actual.Body,
+			actual.BodyJSON,
+		)
 	}
 }
 
@@ -414,10 +508,19 @@ func TestReporterAddHTTPResponseStatus(t *testing.T) {
 func TestReporterAddHTTPResponseHeaders(t *testing.T) {
 	spec := &model.TestSpec{
 		Expect: model.ExpectSpec{
-			HTTP: &model.HTTPResponse{
-				Headers: map[string][]string{
-					"X-Included": {"expected"},
-					"X-Missing":  {"expected"},
+			HTTP: &model.HTTPResponsePattern{
+				Headers: map[string][]matcher.String{
+					"X-Included": {
+						{
+							Operator: matcher.StringMatchOperatorEquals,
+							Value:    "expected",
+						},
+					},
+					"X-Missing": {
+						{
+							Operator: matcher.StringMatchOperatorExists,
+						},
+					},
 				},
 			},
 		},
@@ -452,18 +555,31 @@ func TestReporterAddHTTPResponseHeaders(t *testing.T) {
 	headers["X-Included"][0] = "changed"
 
 	if actual["X-Included"][0] != "actual-1" {
-		t.Error(
-			"stored headers changed with source",
-		)
+		t.Error("stored headers changed with source")
 	}
 }
 
 func TestSelectHeaders(t *testing.T) {
+	equals := func(value string) matcher.String {
+		return matcher.String{
+			Operator: matcher.StringMatchOperatorEquals,
+			Value:    value,
+		}
+	}
+
+	exists := matcher.String{
+		Operator: matcher.StringMatchOperatorExists,
+	}
+
+	nonempty := matcher.String{
+		Operator: matcher.StringMatchOperatorNonEmpty,
+	}
+
 	tests := []struct {
 		name string
 
 		actual   http.Header
-		expected map[string][]string
+		expected map[string][]matcher.String
 
 		want map[string][]string
 	}{
@@ -478,8 +594,8 @@ func TestSelectHeaders(t *testing.T) {
 			actual: http.Header{
 				"X-Test": {"value"},
 			},
-			expected: map[string][]string{
-				"X-Missing": {"expected"},
+			expected: map[string][]matcher.String{
+				"X-Missing": {equals("expected")},
 			},
 		},
 		{
@@ -489,14 +605,50 @@ func TestSelectHeaders(t *testing.T) {
 				"X-Two":   {"2"},
 				"X-Other": {"other"},
 			},
-			expected: map[string][]string{
-				"X-One":     {"expected"},
-				"X-Two":     {"expected"},
-				"X-Missing": {"expected"},
+			expected: map[string][]matcher.String{
+				"X-One":     {equals("expected")},
+				"X-Two":     {equals("expected")},
+				"X-Missing": {equals("expected")},
 			},
 			want: map[string][]string{
 				"X-One": {"1"},
 				"X-Two": {"2"},
+			},
+		},
+		{
+			name: "exists matcher",
+			actual: http.Header{
+				"X-Test": {""},
+			},
+			expected: map[string][]matcher.String{
+				"X-Test": {exists},
+			},
+			want: map[string][]string{
+				"X-Test": {""},
+			},
+		},
+		{
+			name: "nonempty matcher",
+			actual: http.Header{
+				"X-Test": {"value"},
+			},
+			expected: map[string][]matcher.String{
+				"X-Test": {nonempty},
+			},
+			want: map[string][]string{
+				"X-Test": {"value"},
+			},
+		},
+		{
+			name: "case insensitive header lookup",
+			actual: http.Header{
+				"X-Request-Id": {"123"},
+			},
+			expected: map[string][]matcher.String{
+				"x-request-id": {nonempty},
+			},
+			want: map[string][]string{
+				"x-request-id": {"123"},
 			},
 		},
 	}
@@ -520,113 +672,138 @@ func TestSelectHeaders(t *testing.T) {
 }
 
 func TestReporterAddHTTPResponseBody(t *testing.T) {
-	t.Run("payload disabled", func(t *testing.T) {
-		r := newReporterForTest(
-			&Config{},
-			&model.TestSpec{},
-		)
+	tests := []struct {
+		name        string
+		dumpPayload bool
+		body        []byte
+		want        string
+	}{
+		{
+			name: "payload disabled",
+			body: []byte("body"),
+			want: "<dump disabled>",
+		},
+		{
+			name:        "payload enabled",
+			dumpPayload: true,
+			body:        []byte("body"),
+			want:        "body",
+		},
+		{
+			name: "empty body with dumping disabled",
+			body: []byte{},
+		},
+		{
+			name:        "empty body with dumping enabled",
+			dumpPayload: true,
+			body:        []byte{},
+		},
+	}
 
-		r.AddHTTPResponseBody("body")
-
-		if r.Result().Summary.Response != nil {
-			t.Fatal(
-				"expected response summary not to be created",
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newReporterForTest(
+				&Config{
+					DumpPayload: tt.dumpPayload,
+				},
+				&model.TestSpec{},
 			)
-		}
-	})
 
-	t.Run("payload enabled", func(t *testing.T) {
-		r := newReporterForTest(
-			&Config{
-				DumpPayload: true,
-			},
-			&model.TestSpec{},
-		)
+			r.AddHTTPResponseBody(tt.body)
 
-		r.AddHTTPResponseBody("")
+			response := r.Result().Summary.Response
 
-		response := r.Result().Summary.Response
+			if response == nil || response.HTTP == nil {
+				t.Fatal("expected HTTP response summary")
+			}
 
-		if response == nil || response.HTTP == nil {
-			t.Fatal("expected HTTP response summary")
-		}
-
-		if response.HTTP.Body == nil {
-			t.Fatal(
-				"expected non-nil body pointer",
-			)
-		}
-
-		if *response.HTTP.Body != "" {
-			t.Errorf(
-				"expected empty body, got %q",
-				*response.HTTP.Body,
-			)
-		}
-	})
+			if response.HTTP.Body != tt.want {
+				t.Errorf(
+					"expected body %q, got %q",
+					tt.want,
+					response.HTTP.Body,
+				)
+			}
+		})
+	}
 }
 
 func TestReporterAddHTTPResponseBodyJSON(t *testing.T) {
-	t.Run("payload disabled", func(t *testing.T) {
-		r := newReporterForTest(
-			&Config{},
-			&model.TestSpec{},
-		)
+	tests := []struct {
+		name        string
+		dumpPayload bool
+		body        []byte
+		want        string
+	}{
+		{
+			name: "payload disabled",
+			body: []byte(`{"name":"test"}`),
+			want: "<dump disabled>",
+		},
+		{
+			name:        "payload enabled",
+			dumpPayload: true,
+			body:        []byte(`{"name":"test"}`),
+			want:        `{"name":"test"}`,
+		},
+		{
+			name: "empty body with dumping disabled",
+			body: []byte{},
+		},
+		{
+			name:        "empty body with dumping enabled",
+			dumpPayload: true,
+			body:        []byte{},
+		},
+	}
 
-		r.AddHTTPResponseBodyJSON("{}")
-
-		if r.Result().Summary.Response != nil {
-			t.Fatal(
-				"expected response summary not to be created",
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newReporterForTest(
+				&Config{
+					DumpPayload: tt.dumpPayload,
+				},
+				&model.TestSpec{},
 			)
-		}
-	})
 
-	t.Run("payload enabled", func(t *testing.T) {
-		r := newReporterForTest(
-			&Config{
-				DumpPayload: true,
-			},
-			&model.TestSpec{},
-		)
+			r.AddHTTPResponseBodyJSON(tt.body)
 
-		r.AddHTTPResponseBodyJSON("")
+			response := r.Result().Summary.Response
 
-		response := r.Result().Summary.Response
+			if response == nil || response.HTTP == nil {
+				t.Fatal("expected HTTP response summary")
+			}
 
-		if response == nil || response.HTTP == nil {
-			t.Fatal("expected HTTP response summary")
-		}
-
-		if response.HTTP.BodyJSON == nil {
-			t.Fatal(
-				"expected non-nil JSON body pointer",
-			)
-		}
-
-		if *response.HTTP.BodyJSON != "" {
-			t.Errorf(
-				"expected empty JSON body, got %q",
-				*response.HTTP.BodyJSON,
-			)
-		}
-	})
+			if response.HTTP.BodyJSON != tt.want {
+				t.Errorf(
+					"expected JSON body %q, got %q",
+					tt.want,
+					response.HTTP.BodyJSON,
+				)
+			}
+		})
+	}
 }
 
 func TestReporterAddGRPCRequest(t *testing.T) {
 	tests := []struct {
 		name string
 
-		dumpPayload   bool
-		expectMessage bool
+		dumpPayload bool
+		wantMessage map[string]any
 	}{
 		{
 			name: "payload disabled",
+			wantMessage: map[string]any{
+				"<dump disabled>": nil,
+			},
 		},
 		{
-			name:          "payload enabled",
-			dumpPayload:   true,
-			expectMessage: true,
+			name:        "payload enabled",
+			dumpPayload: true,
+			wantMessage: map[string]any{
+				"name": "test",
+			},
 		},
 	}
 
@@ -652,6 +829,10 @@ func TestReporterAddGRPCRequest(t *testing.T) {
 			}
 
 			r.AddGRPCRequest(req)
+
+			if r.Result().Summary.Request == nil {
+				t.Fatal("expected request summary")
+			}
 
 			actual := r.Result().Summary.Request.GRPC
 
@@ -694,20 +875,13 @@ func TestReporterAddGRPCRequest(t *testing.T) {
 				)
 			}
 
-			if tt.expectMessage {
-				if !reflect.DeepEqual(
-					actual.Message,
-					req.Message,
-				) {
-					t.Errorf(
-						"expected message %+v, got %+v",
-						req.Message,
-						actual.Message,
-					)
-				}
-			} else if actual.Message != nil {
+			if !reflect.DeepEqual(
+				actual.Message,
+				tt.wantMessage,
+			) {
 				t.Errorf(
-					"expected nil message, got %+v",
+					"expected message %+v, got %+v",
+					tt.wantMessage,
 					actual.Message,
 				)
 			}
@@ -716,18 +890,35 @@ func TestReporterAddGRPCRequest(t *testing.T) {
 			req.Message["name"] = "changed"
 
 			if actual.Metadata["x-test"][0] != "one" {
-				t.Error(
-					"stored metadata changed with source",
-				)
+				t.Error("stored metadata changed with source")
 			}
 
-			if tt.expectMessage &&
+			if tt.dumpPayload &&
 				actual.Message["name"] != "test" {
-				t.Error(
-					"stored message changed with source",
-				)
+				t.Error("stored message changed with source")
 			}
 		})
+	}
+}
+
+func TestReporterAddGRPCRequestWithoutMessage(t *testing.T) {
+	r := newReporterForTest(
+		&Config{},
+		&model.TestSpec{},
+	)
+
+	r.AddGRPCRequest(&model.GRPCRequest{
+		Service: "example.Service",
+		Method:  "Create",
+	})
+
+	actual := r.Result().Summary.Request.GRPC
+
+	if actual.Message != nil {
+		t.Errorf(
+			"expected nil message, got %+v",
+			actual.Message,
+		)
 	}
 }
 
@@ -757,10 +948,19 @@ func TestReporterAddGRPCResponseStatus(t *testing.T) {
 func TestReporterAddGRPCResponseMetadata(t *testing.T) {
 	spec := &model.TestSpec{
 		Expect: model.ExpectSpec{
-			GRPC: &model.GRPCResponse{
-				Metadata: map[string][]string{
-					"x-included": {"expected"},
-					"x-missing":  {"expected"},
+			GRPC: &model.GRPCResponsePattern{
+				Metadata: map[string][]matcher.String{
+					"x-included": {
+						{
+							Operator: matcher.StringMatchOperatorEquals,
+							Value:    "expected",
+						},
+					},
+					"x-missing": {
+						{
+							Operator: matcher.StringMatchOperatorExists,
+						},
+					},
 				},
 			},
 		},
@@ -799,18 +999,31 @@ func TestReporterAddGRPCResponseMetadata(t *testing.T) {
 	metadata["x-included"][0] = "changed"
 
 	if actual["x-included"][0] != "actual-1" {
-		t.Error(
-			"stored metadata changed with source",
-		)
+		t.Error("stored metadata changed with source")
 	}
 }
 
 func TestSelectMetadata(t *testing.T) {
+	equals := func(value string) matcher.String {
+		return matcher.String{
+			Operator: matcher.StringMatchOperatorEquals,
+			Value:    value,
+		}
+	}
+
+	exists := matcher.String{
+		Operator: matcher.StringMatchOperatorExists,
+	}
+
+	nonempty := matcher.String{
+		Operator: matcher.StringMatchOperatorNonEmpty,
+	}
+
 	tests := []struct {
 		name string
 
 		actual   map[string][]string
-		expected map[string][]string
+		expected map[string][]matcher.String
 
 		want map[string][]string
 	}{
@@ -825,8 +1038,8 @@ func TestSelectMetadata(t *testing.T) {
 			actual: map[string][]string{
 				"x-test": {"value"},
 			},
-			expected: map[string][]string{
-				"x-missing": {"expected"},
+			expected: map[string][]matcher.String{
+				"x-missing": {equals("expected")},
 			},
 		},
 		{
@@ -836,14 +1049,38 @@ func TestSelectMetadata(t *testing.T) {
 				"x-two":   {"2"},
 				"x-other": {"other"},
 			},
-			expected: map[string][]string{
-				"x-one":     {"expected"},
-				"x-two":     {"expected"},
-				"x-missing": {"expected"},
+			expected: map[string][]matcher.String{
+				"x-one":     {equals("expected")},
+				"x-two":     {equals("expected")},
+				"x-missing": {equals("expected")},
 			},
 			want: map[string][]string{
 				"x-one": {"1"},
 				"x-two": {"2"},
+			},
+		},
+		{
+			name: "exists matcher",
+			actual: map[string][]string{
+				"x-test": {""},
+			},
+			expected: map[string][]matcher.String{
+				"x-test": {exists},
+			},
+			want: map[string][]string{
+				"x-test": {""},
+			},
+		},
+		{
+			name: "nonempty matcher",
+			actual: map[string][]string{
+				"x-test": {"value"},
+			},
+			expected: map[string][]matcher.String{
+				"x-test": {nonempty},
+			},
+			want: map[string][]string{
+				"x-test": {"value"},
 			},
 		},
 	}
@@ -867,102 +1104,87 @@ func TestSelectMetadata(t *testing.T) {
 }
 
 func TestReporterAddGRPCResponseMessage(t *testing.T) {
-	t.Run("payload disabled", func(t *testing.T) {
-		r := newReporterForTest(
-			&Config{},
-			&model.TestSpec{},
-		)
+	tests := []struct {
+		name string
 
-		r.AddGRPCResponseMessage(
-			map[string]any{
+		dumpPayload bool
+		message     map[string]any
+		want        map[string]any
+	}{
+		{
+			name: "payload disabled",
+			message: map[string]any{
 				"name": "test",
 			},
-		)
-
-		if r.Result().Summary.Response != nil {
-			t.Fatal(
-				"expected response summary not to be created",
-			)
-		}
-	})
-
-	t.Run("payload enabled", func(t *testing.T) {
-		r := newReporterForTest(
-			&Config{
-				DumpPayload: true,
+			want: map[string]any{
+				"<dump disabled>": nil,
 			},
-			&model.TestSpec{},
-		)
-
-		message := map[string]any{
-			"name": "test",
-		}
-
-		r.AddGRPCResponseMessage(message)
-
-		response := r.Result().Summary.Response
-
-		if response == nil || response.GRPC == nil {
-			t.Fatal("expected gRPC response summary")
-		}
-
-		if response.GRPC.Message == nil {
-			t.Fatal(
-				"expected non-nil message pointer",
-			)
-		}
-
-		if !reflect.DeepEqual(
-			*response.GRPC.Message,
-			message,
-		) {
-			t.Errorf(
-				"expected message %+v, got %+v",
-				message,
-				*response.GRPC.Message,
-			)
-		}
-
-		message["name"] = "changed"
-
-		if (*response.GRPC.Message)["name"] != "test" {
-			t.Error(
-				"stored message changed with source",
-			)
-		}
-	})
-
-	t.Run("explicit empty message", func(t *testing.T) {
-		r := newReporterForTest(
-			&Config{
-				DumpPayload: true,
+		},
+		{
+			name:        "payload enabled",
+			dumpPayload: true,
+			message: map[string]any{
+				"name": "test",
 			},
-			&model.TestSpec{},
-		)
+			want: map[string]any{
+				"name": "test",
+			},
+		},
+		{
+			name:    "empty message with dumping disabled",
+			message: map[string]any{},
+			want: map[string]any{
+				"<none>": nil,
+			},
+		},
+		{
+			name:        "empty message with dumping enabled",
+			dumpPayload: true,
+			message:     map[string]any{},
+			want: map[string]any{
+				"<none>": nil,
+			},
+		},
+	}
 
-		r.AddGRPCResponseMessage(
-			map[string]any{},
-		)
-
-		response := r.Result().Summary.Response
-
-		if response == nil || response.GRPC == nil {
-			t.Fatal("expected gRPC response summary")
-		}
-
-		if response.GRPC.Message == nil {
-			t.Fatal(
-				"expected non-nil message pointer",
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newReporterForTest(
+				&Config{
+					DumpPayload: tt.dumpPayload,
+				},
+				&model.TestSpec{},
 			)
-		}
 
-		if len(*response.GRPC.Message) != 0 {
-			t.Errorf(
-				"expected empty message, got %+v",
-				*response.GRPC.Message,
-			)
-		}
-	})
+			r.AddGRPCResponseMessage(tt.message)
+
+			response := r.Result().Summary.Response
+
+			if response == nil || response.GRPC == nil {
+				t.Fatal("expected gRPC response summary")
+			}
+
+			if !reflect.DeepEqual(
+				response.GRPC.Message,
+				tt.want,
+			) {
+				t.Errorf(
+					"expected message %+v, got %+v",
+					tt.want,
+					response.GRPC.Message,
+				)
+			}
+
+			if len(tt.message) > 0 {
+				tt.message["name"] = "changed"
+
+				if tt.dumpPayload &&
+					response.GRPC.Message["name"] != "test" {
+					t.Error("stored message changed with source")
+				}
+			}
+		})
+	}
 }
 
 func newReporterForTest(

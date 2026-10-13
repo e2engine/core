@@ -39,6 +39,8 @@ var (
 	EnvironmentServiceListenAddress  = environmentService("listen.address")
 	EnvironmentServiceRuntimeAddress = environmentService("runtime.address")
 
+	MatcherOperator = keys.New("matcher.operator")
+
 	RequestMethod  = request("method")
 	RequestURLPath = request("url.path")
 

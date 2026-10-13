@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+
+	"github.com/e2engine/core/model/matcher"
 )
 
 func CloneStruct[T any](src T) (T, error) {
@@ -107,6 +109,17 @@ func CloneStringSlice(value []string) []string {
 	}
 
 	result := make([]string, len(value))
+	copy(result, value)
+
+	return result
+}
+
+func CloneStringMatcherSlice(value []matcher.String) []matcher.String {
+	if value == nil {
+		return nil
+	}
+
+	result := make([]matcher.String, len(value))
 	copy(result, value)
 
 	return result

@@ -597,7 +597,7 @@ func newHTTPTestJob(
 					},
 				},
 				Expect: model.ExpectSpec{
-					HTTP: &model.HTTPResponse{
+					HTTP: &model.HTTPResponsePattern{
 						StatusCode: expectedStatus,
 					},
 				},

@@ -63,7 +63,7 @@ func TestCompactJSON(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			actual := CompactJSON(tt.input)
 
-			if actual != tt.expected {
+			if string(actual) != tt.expected {
 				t.Fatalf(
 					"expected %q, got %q",
 					tt.expected,

@@ -58,6 +58,8 @@ var (
 	ErrNoTestsResolved = errorc.New("no tests resolved for test suite")
 
 	ErrUnsupportedFileType = errorc.New("unsupported file type")
+
+	ErrInvalidGRPCMessageMatcher = errorc.New("invalid gRPC message matcher")
 )
 
 // Is wraps native errors package Is.

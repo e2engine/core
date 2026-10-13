@@ -6,16 +6,16 @@ import (
 	"reflect"
 )
 
-func CompactJSON(raw json.RawMessage) string {
+func CompactJSON(raw json.RawMessage) []byte {
 	if len(raw) == 0 {
-		return ""
+		return nil
 	}
 
 	var buf bytes.Buffer
 	if err := json.Compact(&buf, raw); err != nil {
-		return string(raw)
+		return raw
 	}
-	return buf.String()
+	return buf.Bytes()
 }
 
 func IsJSONEqual(expected, actual []byte) (bool, error) {

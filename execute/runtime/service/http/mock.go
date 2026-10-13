@@ -8,11 +8,13 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"reflect"
 
 	"github.com/ygrebnov/errorc"
 
+	"github.com/e2engine/core/execute/match"
+	"github.com/e2engine/core/internal/util"
 	"github.com/e2engine/core/model"
+	"github.com/e2engine/core/model/matcher"
 	"github.com/e2engine/core/pkg/errors"
 	"github.com/e2engine/core/pkg/keys"
 	"github.com/e2engine/core/pkg/log"
@@ -144,22 +146,20 @@ func (s *MockHTTPService) match(
 	for i := range s.fixtures {
 		fixture := &s.fixtures[i]
 
-		if fixture.method == r.Method &&
-			fixture.path == r.URL.Path &&
-			areQueryParamsEqual(
-				fixture.query,
-				r.URL.Query(),
-			) &&
-			areHeadersEqual(
-				fixture.headers,
-				r.Header,
-			) &&
-			isBodyEqual(
+		if fixture.method == r.Method && fixture.path == r.URL.Path &&
+			areQueryParamsEqual(fixture.query, r.URL.Query()) &&
+			areHeadersEqual(fixture.headers, r.Header) {
+			equalBody, errBodyEqual := isBodyEqual(
 				fixture.body,
 				fixture.bodyJSON,
 				body,
-			) {
-			return fixture, nil
+			)
+			if errBodyEqual != nil {
+				return nil, errBodyEqual
+			}
+			if equalBody {
+				return fixture, nil
+			}
 		}
 	}
 
@@ -167,57 +167,42 @@ func (s *MockHTTPService) match(
 }
 
 func isBodyEqual(
-	expectedBody *string,
-	expectedBodyJSON *string,
+	expectedBody *matcher.String,
+	expectedBodyJSON *matcher.String,
 	actual []byte,
-) bool {
+) (bool, error) {
 	if expectedBody != nil {
-		return *expectedBody == string(actual)
+		return match.IsStringMatched(actual, expectedBody), nil
 	}
 
 	if expectedBodyJSON != nil {
-		var expectedValue any
-		if err := json.Unmarshal(
-			[]byte(*expectedBodyJSON),
-			&expectedValue,
-		); err != nil {
-			return false
+		if !json.Valid(actual) {
+			return false, nil
 		}
 
-		var actualValue any
-		if err := json.Unmarshal(
-			actual,
-			&actualValue,
-		); err != nil {
-			return false
-		}
-
-		return reflect.DeepEqual(
-			expectedValue,
-			actualValue,
-		)
+		return match.IsJSONMatched(actual, expectedBodyJSON)
 	}
 
-	return true
+	return true, nil
 }
 
-func areHeadersEqual(expected, actual http.Header) bool {
+func areHeadersEqual(
+	expected map[string][]matcher.String,
+	actual http.Header,
+) bool {
 	for key, expectedValues := range expected {
-		actualValues := actual.Values(key)
-		if len(expectedValues) != len(actualValues) {
+		canonicalKey := http.CanonicalHeaderKey(key)
+		actualValues, exists := actual[canonicalKey]
+
+		if !match.IsStringSliceMatched(
+			actualValues,
+			exists,
+			expectedValues,
+		) {
 			return false
 		}
-		expectedCounts := make(map[string]int, len(expectedValues))
-		for _, value := range expectedValues {
-			expectedCounts[value]++
-		}
-		for _, value := range actualValues {
-			if expectedCounts[value] == 0 {
-				return false
-			}
-			expectedCounts[value]--
-		}
 	}
+
 	return true
 }
 
@@ -225,7 +210,14 @@ func areQueryParamsEqual(
 	expected,
 	actual url.Values,
 ) bool {
-	return reflect.DeepEqual(expected, actual)
+	for key, expectedValues := range expected {
+		actualValues, exists := actual[key]
+		if !exists || !util.IsStringSlicesEqual(actualValues, expectedValues) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (s *MockHTTPService) respond(
@@ -276,10 +268,10 @@ type Fixture struct {
 	method  string
 	path    string
 	query   url.Values
-	headers map[string][]string
+	headers map[string][]matcher.String
 
-	body     *string
-	bodyJSON *string
+	body     *matcher.String
+	bodyJSON *matcher.String
 
 	status          int
 	responseHeaders map[string][]string
@@ -310,7 +302,9 @@ func compileFixtures(
 
 			status: spec.Then.HTTP.StatusCode,
 
-			responseHeaders: spec.Then.HTTP.Headers,
+			responseHeaders:  spec.Then.HTTP.Headers,
+			responseBody:     spec.Then.HTTP.Body,
+			responseBodyJSON: spec.Then.HTTP.BodyJSON,
 		}
 
 		if spec.When.HTTP.Body != nil {
@@ -319,14 +313,6 @@ func compileFixtures(
 
 		if spec.When.HTTP.BodyJSON != nil {
 			fixture.bodyJSON = spec.When.HTTP.BodyJSON
-		}
-
-		if spec.Then.HTTP.Body != nil {
-			fixture.responseBody = *spec.Then.HTTP.Body
-		}
-
-		if spec.Then.HTTP.BodyJSON != nil {
-			fixture.responseBodyJSON = *spec.Then.HTTP.BodyJSON
 		}
 
 		fixtures[i] = fixture

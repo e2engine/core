@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net"
 	"reflect"
@@ -19,6 +20,7 @@ import (
 	"github.com/e2engine/core/execute"
 	servicegrpc "github.com/e2engine/core/execute/runtime/service/grpc"
 	"github.com/e2engine/core/model"
+	"github.com/e2engine/core/model/matcher"
 	coreerrors "github.com/e2engine/core/pkg/errors"
 )
 
@@ -445,7 +447,7 @@ func TestExecutorExecute(t *testing.T) {
 					},
 				},
 				Expect: model.ExpectSpec{
-					GRPC: &model.GRPCResponse{
+					GRPC: &model.GRPCResponsePattern{
 						Status: "OK",
 						Message: mapPtrExecutor(
 							map[string]any{
@@ -569,6 +571,14 @@ func TestExecutorExecute(t *testing.T) {
 
 func mapPtrExecutor(
 	value map[string]any,
-) *map[string]any {
-	return &value
+) *matcher.GRPCMessage {
+	data, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+
+	return &matcher.GRPCMessage{
+		Operator: matcher.GRPCMessageMatchOperatorEquals,
+		Value:    string(data),
+	}
 }

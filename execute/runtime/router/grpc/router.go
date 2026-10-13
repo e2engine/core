@@ -276,13 +276,9 @@ func (r *Router) newHandler(
 			stream.Context(),
 		)
 
-		outgoingMetadata := e2enginegrpc.WithoutTestExecutionID(
-			incomingMetadata,
-		)
-
 		outgoingContext := metadata.NewOutgoingContext(
 			ctx,
-			outgoingMetadata,
+			incomingMetadata.Copy(),
 		)
 
 		var response rawMessage
@@ -363,8 +359,6 @@ func splitFullMethod(fullMethod string) (service, method string) {
 }
 
 func cloneMetadata(source metadata.MD) map[string][]string {
-	source = e2enginegrpc.WithoutTestExecutionID(source)
-
 	result := make(
 		map[string][]string,
 		len(source),

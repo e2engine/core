@@ -442,7 +442,7 @@ func modelTestExecutionSummary() *model.TestExecutionSummary {
 		Response: &model.TestExecutionResponseSummary{
 			HTTP: &model.HTTPResponse{
 				StatusCode: 200,
-				BodyJSON:   &bodyJSON,
+				BodyJSON:   bodyJSON,
 			},
 		},
 	}

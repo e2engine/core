@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/e2engine/core/execute/call"
+	"github.com/e2engine/core/execute/match"
 	"github.com/e2engine/core/execute/worker/evaluator"
 	"github.com/e2engine/core/internal/util"
 	"github.com/e2engine/core/model"
+	"github.com/e2engine/core/model/matcher"
 	"github.com/e2engine/core/pkg/keys"
 )
 
@@ -31,52 +34,32 @@ func NewEvaluator(
 
 func (e *Evaluator) EvaluateResponse(
 	resp *http.Response,
-	expect *model.HTTPResponse,
+	expect *model.HTTPResponsePattern,
 ) error {
-	e.reporter.AddHTTPResponseStatus(resp.StatusCode)
-	e.reporter.AddHTTPResponseHeaders(resp.Header)
+	e.evaluateStatusCode(expect.StatusCode, resp.StatusCode)
 
-	if resp.StatusCode != expect.StatusCode {
-		e.reporter.AddDeviation(&model.TestExecutionDeviation{
-			Field:    string(keys.FieldStatusCode),
-			Expected: strconv.Itoa(expect.StatusCode),
-			Actual:   strconv.Itoa(resp.StatusCode),
-		})
-	}
-
-	for key, expectedValues := range expect.Headers {
-		actualValues := resp.Header.Values(key)
-
-		if len(actualValues) > 0 &&
-			util.IsStringSlicesEqual(actualValues, expectedValues) {
-			continue
-		}
-
-		e.reporter.AddDeviation(&model.TestExecutionDeviation{
-			Field:    "headers." + key,
-			Expected: strings.Join(expectedValues, ","),
-			Actual:   strings.Join(actualValues, ","),
-		})
-	}
-
-	if expect.Body == nil && expect.BodyJSON == nil {
-		// nil means "do not evaluate body"
-		return nil
-	}
+	e.evaluateHeaders(expect.Headers, resp.Header)
 
 	actualBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
 
-	if expect.Body != nil {
-		e.reporter.AddHTTPResponseBody(string(actualBody))
+	if expect.Body == nil && expect.BodyJSON == nil {
+		// nil means "do not evaluate body"
+		// we still need to report the body we received
+		e.reporter.AddHTTPResponseBody(actualBody)
+		return nil
+	}
 
-		if string(actualBody) != *expect.Body {
-			e.reporter.AddPayloadDeviation(&model.TestExecutionDeviation{
+	if expect.Body != nil {
+		e.reporter.AddHTTPResponseBody(actualBody)
+
+		if !match.IsStringMatched(actualBody, expect.Body) {
+			e.reporter.AddPayloadDeviation(&model.PayloadDeviation{
 				Field:    string(keys.FieldBody),
-				Expected: *expect.Body,
-				Actual:   string(actualBody),
+				Expected: expect.Body,
+				Actual:   actualBody,
 			})
 		}
 
@@ -84,40 +67,87 @@ func (e *Evaluator) EvaluateResponse(
 	}
 
 	if !json.Valid(actualBody) {
-		e.reporter.AddHTTPResponseBody(string(actualBody))
+		e.reporter.AddHTTPResponseBodyJSON(actualBody)
 
-		e.reporter.AddPayloadDeviation(&model.TestExecutionDeviation{
+		e.reporter.AddPayloadDeviation(&model.PayloadDeviation{
 			Field:    string(keys.FieldBodyJSON),
-			Expected: util.CompactJSON([]byte(*expect.BodyJSON)),
-			Actual:   string(actualBody),
+			Expected: expect.BodyJSON,
+			Actual:   actualBody,
 			Message:  "response body is not valid JSON",
 		})
 
 		return nil
 	}
 
-	e.reporter.AddHTTPResponseBodyJSON(util.CompactJSON(actualBody))
+	actualJSON := util.CompactJSON(actualBody)
 
-	equal, err := util.IsJSONEqual(
-		[]byte(*expect.BodyJSON),
+	e.reporter.AddHTTPResponseBodyJSON(actualJSON)
+
+	matched, err := match.IsJSONMatched(
 		actualBody,
+		expect.BodyJSON,
 	)
 	if err != nil {
-		// Expected JSON should already have been validated.
+		// Expected JSON has already been validated.
 		return err
 	}
 
-	if !equal {
-		e.reporter.AddPayloadDeviation(&model.TestExecutionDeviation{
-			Field: string(keys.FieldBodyJSON),
-			Expected: util.CompactJSON(
-				[]byte(*expect.BodyJSON),
-			),
-			Actual: util.CompactJSON(actualBody),
+	if !matched {
+		e.reporter.AddPayloadDeviation(&model.PayloadDeviation{
+			Field:    string(keys.FieldBodyJSON),
+			Expected: expect.BodyJSON,
+			Actual:   actualJSON,
 		})
 	}
 
 	return nil
+}
+
+func (e *Evaluator) evaluateStatusCode(expected, actual int) {
+	e.reporter.AddHTTPResponseStatus(actual)
+
+	if actual != expected {
+		e.reporter.AddDeviation(&model.TestExecutionDeviation{
+			Field:    string(keys.FieldStatusCode),
+			Expected: strconv.Itoa(expected),
+			Actual:   strconv.Itoa(actual),
+		})
+	}
+}
+
+func (e *Evaluator) evaluateHeaders(
+	expected map[string][]matcher.String,
+	actual http.Header,
+) {
+	e.reporter.AddHTTPResponseHeaders(actual)
+
+	for key, expectedValues := range expected {
+		canonicalKey := http.CanonicalHeaderKey(key)
+		actualValues, exists := actual[canonicalKey]
+
+		if match.IsStringSliceMatched(
+			actualValues,
+			exists,
+			expectedValues,
+		) {
+			continue
+		}
+
+		sortedActual := slices.Clone(actualValues)
+		slices.Sort(sortedActual)
+
+		expectedStrings := make([]string, len(expectedValues))
+		for i, v := range expectedValues {
+			expectedStrings[i] = v.String()
+		}
+		slices.Sort(expectedStrings)
+
+		e.reporter.AddDeviation(&model.TestExecutionDeviation{
+			Field:    "headers." + key,
+			Expected: strings.Join(expectedStrings, ","),
+			Actual:   strings.Join(sortedActual, ","),
+		})
+	}
 }
 
 func (e *Evaluator) Matches(
@@ -160,24 +190,28 @@ func httpCallMatchesExpectation(
 	}
 
 	for key, expectedValues := range expected.Headers {
-		actualValues := actual.Headers.Values(key)
+		canonicalKey := http.CanonicalHeaderKey(key)
+		actualValues, exists := actual.Headers[canonicalKey]
 
-		if len(actualValues) == 0 ||
-			!util.IsStringSlicesEqual(actualValues, expectedValues) {
+		if !match.IsStringSliceMatched(
+			actualValues,
+			exists,
+			expectedValues,
+		) {
 			return false
 		}
 	}
 
-	if expected.Body != nil && string(actual.Body) != *expected.Body {
+	if expected.Body != nil && !match.IsStringMatched(actual.Body, expected.Body) {
 		return false
 	}
 
 	if expected.BodyJSON != nil {
-		equal, err := util.IsJSONEqual(
-			[]byte(*expected.BodyJSON),
+		matched, err := match.IsJSONMatched(
 			actual.Body,
+			expected.BodyJSON,
 		)
-		if err != nil || !equal {
+		if err != nil || !matched {
 			return false
 		}
 	}

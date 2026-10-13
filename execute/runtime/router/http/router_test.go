@@ -187,9 +187,9 @@ func TestRouter(t *testing.T) {
 		)
 	}
 
-	if id := e2enginehttp.TestExecutionID(got.HTTP.Request.Headers); id != "" {
+	if id := e2enginehttp.TestExecutionID(got.HTTP.Request.Headers); id == "" {
 		t.Errorf(
-			"expected execution ID header to be removed, got %q",
+			"expected execution ID header to be present, got %q",
 			id,
 		)
 	}

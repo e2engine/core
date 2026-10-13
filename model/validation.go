@@ -12,6 +12,7 @@ import (
 	"github.com/ygrebnov/errorc"
 	modellib "github.com/ygrebnov/model"
 
+	"github.com/e2engine/core/model/matcher"
 	"github.com/e2engine/core/pkg/errors"
 	"github.com/e2engine/core/pkg/keys"
 )
@@ -19,7 +20,7 @@ import (
 var validationRules []modellib.Rule
 
 func init() {
-	validationRules = make([]modellib.Rule, 4)
+	validationRules = make([]modellib.Rule, 8)
 
 	idRule, err := getIDRule()
 	if err != nil {
@@ -41,10 +42,34 @@ func init() {
 		panic(err)
 	}
 
+	stringMatcherRule, err := matcher.GetStringMatcherRule()
+	if err != nil {
+		panic(err)
+	}
+
+	stringMatchersRule, err := matcher.GetStringMatchersRule()
+	if err != nil {
+		panic(err)
+	}
+
+	stringMatcherValidJSONRule, err := getStringMatcherValidJSONRule()
+	if err != nil {
+		panic(err)
+	}
+
+	grpcMessageMatcherRule, err := matcher.GetGRPCMessageMatcherRule()
+	if err != nil {
+		panic(err)
+	}
+
 	validationRules[0] = idRule
 	validationRules[1] = networkAddressRule
 	validationRules[2] = httpURLRule
 	validationRules[3] = validJSONRule
+	validationRules[4] = stringMatcherRule
+	validationRules[5] = stringMatchersRule
+	validationRules[6] = stringMatcherValidJSONRule
+	validationRules[7] = grpcMessageMatcherRule
 
 	environmentBinding, err = modellib.NewBinding[Environment](modellib.WithRules(validationRules...))
 	if err != nil {

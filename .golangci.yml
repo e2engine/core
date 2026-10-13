@@ -128,6 +128,7 @@ linters:
           - gosec
           - govet
           - lll
+          - noctx
           - revive
           - staticcheck
           - unparam

@@ -9,6 +9,7 @@ import (
 
 	httpservice "github.com/e2engine/core/execute/runtime/service/http"
 	"github.com/e2engine/core/model"
+	"github.com/e2engine/core/model/matcher"
 	"github.com/e2engine/core/pkg/keys"
 	"github.com/e2engine/core/pkg/log"
 )
@@ -219,8 +220,16 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			fixture: newHTTPFixture(
 				"GET",
 				"/users",
-				map[string][]string{
-					"X-Test": {"one", "two"},
+				map[string][]matcher.String{
+					"X-Test": {
+						{
+							Operator: matcher.StringMatchOperatorEquals,
+							Value:    "one",
+						}, {
+							Operator: matcher.StringMatchOperatorEquals,
+							Value:    "two",
+						},
+					},
 				},
 				nil,
 				nil,
@@ -239,8 +248,13 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			fixture: newHTTPFixture(
 				"GET",
 				"/users",
-				map[string][]string{
-					"X-Test": {"expected"},
+				map[string][]matcher.String{
+					"X-Test": {
+						{
+							Operator: matcher.StringMatchOperatorEquals,
+							Value:    "expected",
+						},
+					},
 				},
 				nil,
 				nil,
@@ -260,8 +274,13 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			fixture: newHTTPFixture(
 				"GET",
 				"/users",
-				map[string][]string{
-					"X-Test": {"expected"},
+				map[string][]matcher.String{
+					"X-Test": {
+						{
+							Operator: matcher.StringMatchOperatorEquals,
+							Value:    "expected",
+						},
+					},
 				},
 				nil,
 				nil,
@@ -324,7 +343,7 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			expectedMiss:   true,
 		},
 		{
-			name: "unexpected query is miss",
+			name: "additional query parameters ignored",
 			fixture: newHTTPFixture(
 				"GET",
 				"/users",
@@ -336,16 +355,20 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			method: "GET",
 			path:   "/users?page=1",
 
-			expectedStatus: http.StatusNotImplemented,
-			expectedMiss:   true,
+			expectedStatus: http.StatusOK,
 		},
 		{
 			name: "missing header is miss",
 			fixture: newHTTPFixture(
 				"GET",
 				"/users",
-				map[string][]string{
-					"X-Test": {"expected"},
+				map[string][]matcher.String{
+					"X-Test": {
+						{
+							Operator: matcher.StringMatchOperatorEquals,
+							Value:    "expected",
+						},
+					},
 				},
 				nil,
 				nil,
@@ -362,8 +385,13 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			fixture: newHTTPFixture(
 				"GET",
 				"/users",
-				map[string][]string{
-					"X-Test": {"expected"},
+				map[string][]matcher.String{
+					"X-Test": {
+						{
+							Operator: matcher.StringMatchOperatorEquals,
+							Value:    "expected",
+						},
+					},
 				},
 				nil,
 				nil,
@@ -383,8 +411,13 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			fixture: newHTTPFixture(
 				"GET",
 				"/users",
-				map[string][]string{
-					"X-Test": {"expected"},
+				map[string][]matcher.String{
+					"X-Test": {
+						{
+							Operator: matcher.StringMatchOperatorEquals,
+							Value:    "expected",
+						},
+					},
 				},
 				nil,
 				nil,
@@ -478,6 +511,190 @@ func TestMockHTTPServiceMatch(t *testing.T) {
 			),
 			method: "POST",
 			path:   "/text",
+
+			expectedStatus: http.StatusNotImplemented,
+			expectedMiss:   true,
+		},
+		{
+			name: "header exists with empty value",
+			fixture: newHTTPFixture(
+				"GET",
+				"/users",
+				map[string][]matcher.String{
+					"X-Test": {
+						{
+							Operator: matcher.StringMatchOperatorExists,
+						},
+					},
+				},
+				nil,
+				nil,
+				http.StatusOK,
+			),
+			method: "GET",
+			path:   "/users",
+			headers: map[string][]string{
+				"X-Test": {""},
+			},
+
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "header exists but is missing",
+			fixture: newHTTPFixture(
+				"GET",
+				"/users",
+				map[string][]matcher.String{
+					"X-Test": {
+						{
+							Operator: matcher.StringMatchOperatorExists,
+						},
+					},
+				},
+				nil,
+				nil,
+				http.StatusOK,
+			),
+			method: "GET",
+			path:   "/users",
+
+			expectedStatus: http.StatusNotImplemented,
+			expectedMiss:   true,
+		},
+		{
+			name: "header nonempty matches",
+			fixture: newHTTPFixture(
+				"GET",
+				"/users",
+				map[string][]matcher.String{
+					"X-Test": {
+						{
+							Operator: matcher.StringMatchOperatorNonEmpty,
+						},
+					},
+				},
+				nil,
+				nil,
+				http.StatusOK,
+			),
+			method: "GET",
+			path:   "/users",
+			headers: map[string][]string{
+				"X-Test": {"value"},
+			},
+
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "header nonempty rejects empty value",
+			fixture: newHTTPFixture(
+				"GET",
+				"/users",
+				map[string][]matcher.String{
+					"X-Test": {
+						{
+							Operator: matcher.StringMatchOperatorNonEmpty,
+						},
+					},
+				},
+				nil,
+				nil,
+				http.StatusOK,
+			),
+			method: "GET",
+			path:   "/users",
+			headers: map[string][]string{
+				"X-Test": {""},
+			},
+
+			expectedStatus: http.StatusNotImplemented,
+			expectedMiss:   true,
+		},
+		{
+			name: "body nonempty matches",
+			fixture: newHTTPFixture(
+				"POST",
+				"/users",
+				nil,
+				&matcher.String{
+					Operator: matcher.StringMatchOperatorNonEmpty,
+				},
+				nil,
+				http.StatusOK,
+			),
+			method: "POST",
+			path:   "/users",
+			body:   "hello",
+
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "body nonempty rejects empty body",
+			fixture: newHTTPFixture(
+				"POST",
+				"/users",
+				nil,
+				&matcher.String{
+					Operator: matcher.StringMatchOperatorNonEmpty,
+				},
+				nil,
+				http.StatusOK,
+			),
+			method: "POST",
+			path:   "/users",
+
+			expectedStatus: http.StatusNotImplemented,
+			expectedMiss:   true,
+		},
+		{
+			name: "body exists matches empty body",
+			fixture: newHTTPFixture(
+				"POST",
+				"/users",
+				nil,
+				&matcher.String{
+					Operator: matcher.StringMatchOperatorExists,
+				},
+				nil,
+				http.StatusOK,
+			),
+			method: "POST",
+			path:   "/users",
+
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "JSON nonempty matches empty object",
+			fixture: newHTTPFixture(
+				"POST",
+				"/users",
+				nil,
+				nil,
+				&matcher.String{
+					Operator: matcher.StringMatchOperatorNonEmpty,
+				},
+				http.StatusOK,
+			),
+			method: "POST",
+			path:   "/users",
+			body:   `{}`,
+
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name: "JSON nonempty rejects empty body",
+			fixture: newHTTPFixture(
+				"POST",
+				"/users",
+				nil,
+				nil,
+				&matcher.String{
+					Operator: matcher.StringMatchOperatorNonEmpty,
+				},
+				http.StatusOK,
+			),
+			method: "POST",
+			path:   "/users",
 
 			expectedStatus: http.StatusNotImplemented,
 			expectedMiss:   true,
@@ -582,7 +799,7 @@ func TestMockHTTPServiceResponse(t *testing.T) {
 				Headers: map[string][]string{
 					"X-Test": {"one", "two"},
 				},
-				Body: ptr("plain text response"),
+				Body: "plain text response",
 			},
 			expectedBody: "plain text response",
 		},
@@ -593,7 +810,7 @@ func TestMockHTTPServiceResponse(t *testing.T) {
 				Headers: map[string][]string{
 					"X-Test": {"one", "two"},
 				},
-				BodyJSON: ptr("{\n  \"id\": 42\n}"),
+				BodyJSON: "{\n  \"id\": 42\n}",
 			},
 			expectedBody: "{\n  \"id\": 42\n}",
 		},
@@ -733,9 +950,9 @@ func newTestMockHTTPService(
 func newHTTPFixture(
 	method,
 	path string,
-	headers map[string][]string,
+	headers map[string][]matcher.String,
 	body,
-	bodyJSON *string,
+	bodyJSON *matcher.String,
 	status int,
 ) model.FixtureSpec {
 	return model.FixtureSpec{
@@ -756,6 +973,9 @@ func newHTTPFixture(
 	}
 }
 
-func ptr(s string) *string {
-	return &s
+func ptr(s string) *matcher.String {
+	return &matcher.String{
+		Operator: matcher.StringMatchOperatorEquals,
+		Value:    s,
+	}
 }
