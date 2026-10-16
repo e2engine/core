@@ -15,7 +15,7 @@ import (
 
 type HTTPRequest struct {
 	Method   string              `json:"method" yaml:"method" validate:"oneof(GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD)"`
-	URL      string              `json:"url" yaml:"url" validate:"min(1)"`
+	URL      string              `json:"url" yaml:"url" validate:"httpurl"`
 	Query    map[string][]string `json:"query,omitempty" yaml:"query,omitempty"`
 	Headers  map[string][]string `json:"headers,omitempty" yaml:"headers,omitempty"`
 	Body     string              `json:"body,omitempty" yaml:"body,omitempty"`
@@ -23,26 +23,6 @@ type HTTPRequest struct {
 }
 
 func (h *HTTPRequest) Validate() error {
-	u, err := url.ParseRequestURI(h.URL)
-	if err != nil {
-		return errorc.With(
-			errorc.New("invalid HTTP request URL"),
-			errorc.Error(keys.Cause, err),
-		)
-	}
-
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return errorc.New(
-			"HTTP request URL scheme must be http or https",
-		)
-	}
-
-	if strings.TrimSpace(u.Host) == "" {
-		return errorc.New(
-			"HTTP request URL must contain a host",
-		)
-	}
-
 	if h.Body != "" && h.BodyJSON != "" {
 		return errorc.New(
 			"HTTP request cannot have both body and body_json set",
@@ -59,28 +39,39 @@ type HTTPRequestPattern struct {
 	Path    string                      `json:"path" yaml:"path" validate:"min(1)"`
 	Query   map[string][]string         `json:"query,omitempty" yaml:"query,omitempty"`
 	Headers map[string][]matcher.String `json:"headers,omitempty" yaml:"headers,omitempty" validateElem:"stringmatchers"`
+
 	// Body is nil when body matching should be skipped.
 	// A non-nil matcher defines how the body is matched, including explicit
 	// matching of an empty body.
 	Body *matcher.String `json:"body,omitempty" yaml:"body,omitempty" validate:"stringmatcher"`
+
 	// BodyJSON matches the response body as JSON. For the equals operator,
 	// Value must contain valid JSON and comparison is JSON-semantic.
 	BodyJSON *matcher.String `json:"body_json,omitempty" yaml:"body_json,omitempty" validate:"stringmatcher,validjson"`
 }
 
 func (h *HTTPRequestPattern) Validate() error {
-	u, err := url.ParseRequestURI(h.Path)
-	if err != nil ||
-		u.Path == "" ||
-		!strings.HasPrefix(u.Path, "/") ||
-		u.RawQuery != "" {
-		return errorc.New("invalid HTTP request path")
+	if err := validateHTTPPath(h.Path); err != nil {
+		return err
 	}
 
 	if h.Body != nil && h.BodyJSON != nil {
 		return errorc.New(
 			"HTTP request pattern cannot have both body and body_json set",
 		)
+	}
+
+	return nil
+}
+
+func validateHTTPPath(path string) error {
+	u, err := url.ParseRequestURI(path)
+	if err != nil ||
+		u.Path == "" ||
+		!strings.HasPrefix(u.Path, "/") ||
+		u.RawQuery != "" ||
+		u.Fragment != "" {
+		return errorc.New("invalid HTTP request path")
 	}
 
 	return nil
@@ -109,10 +100,12 @@ func (h *HTTPResponse) Validate() error {
 type HTTPResponsePattern struct {
 	StatusCode int                         `json:"status_code" yaml:"status_code" validate:"min(100),max(599)"`
 	Headers    map[string][]matcher.String `json:"headers,omitempty" yaml:"headers,omitempty" validateElem:"stringmatchers"`
+
 	// Body is nil when body matching should be skipped.
 	// A non-nil matcher defines how the body is matched, including explicit
 	// matching of an empty body.
 	Body *matcher.String `json:"body,omitempty" yaml:"body,omitempty" validate:"stringmatcher"`
+
 	// BodyJSON matches the response body as JSON. For the equals operator,
 	// Value must contain valid JSON and comparison is JSON-semantic.
 	BodyJSON *matcher.String `json:"body_json,omitempty" yaml:"body_json,omitempty" validate:"stringmatcher,validjson"`
@@ -133,6 +126,7 @@ func getStringMatcherValidJSONRule() (modellib.Rule, error) {
 		if value == nil {
 			return nil
 		}
+
 		if value.Operator == matcher.StringMatchOperatorEquals {
 			if !json.Valid([]byte(value.Value)) {
 				return errorc.With(

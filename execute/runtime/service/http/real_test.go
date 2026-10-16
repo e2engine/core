@@ -1,14 +1,16 @@
-package http_test
+package http
 
 import (
 	"context"
+	nativeerrors "errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	httpservice "github.com/e2engine/core/execute/runtime/service/http"
+	"go.uber.org/mock/gomock"
+
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/pkg/log"
 )
@@ -209,6 +211,142 @@ func TestRealHTTPServiceProxy(t *testing.T) {
 	}
 }
 
+func TestRealHTTPServiceHostnameResolution(t *testing.T) {
+	upstream := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			r *http.Request,
+		) {
+			if r.URL.Path != "/health" {
+				t.Errorf(
+					"expected path %q, got %q",
+					"/health",
+					r.URL.Path,
+				)
+			}
+
+			w.WriteHeader(http.StatusNoContent)
+		}),
+	)
+	defer upstream.Close()
+
+	ctrl := gomock.NewController(t)
+
+	resolver := NewMockaddressResolver(ctrl)
+
+	resolver.EXPECT().
+		ResolveHTTPURL("http://gateway-host:9000").
+		Return(upstream.URL, nil)
+
+	logger, err := log.NewSilentLogger()
+	if err != nil {
+		t.Fatalf("cannot create silent logger: %v", err)
+	}
+	defer logger.Close()
+
+	service, err := NewRealHTTPService(
+		logger,
+		&model.ServiceSpec{
+			ID:           "gateway",
+			Kind:         model.ServiceKindHTTP,
+			Mode:         model.ServiceModeReal,
+			E2EnginePort: 8083,
+			Target:       "http://gateway-host:9000",
+		},
+		resolver,
+	)
+	if err != nil {
+		t.Fatalf("NewRealHTTPService() error = %v", err)
+	}
+
+	if err := service.Mount(t.Context()); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := service.Unmount(context.Background()); err != nil {
+			t.Errorf("Unmount() error = %v", err)
+		}
+	})
+
+	req, err := http.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		"http://"+service.GetRuntimeAddress()+"/health",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("cannot create request: %v", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("request error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf(
+			"expected status %d, got %d",
+			http.StatusNoContent,
+			resp.StatusCode,
+		)
+	}
+}
+
+func TestRealHTTPServiceMountAddressResolutionError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	resolver := NewMockaddressResolver(ctrl)
+
+	resolveErr := nativeerrors.New("cannot resolve HTTP target")
+
+	resolver.EXPECT().
+		ResolveHTTPURL("http://gateway-host:9000").
+		Return("", resolveErr)
+
+	logger, err := log.NewSilentLogger()
+	if err != nil {
+		t.Fatalf("cannot create silent logger: %v", err)
+	}
+	defer logger.Close()
+
+	service, err := NewRealHTTPService(
+		logger,
+		&model.ServiceSpec{
+			ID:           "gateway",
+			Kind:         model.ServiceKindHTTP,
+			Mode:         model.ServiceModeReal,
+			E2EnginePort: 8083,
+			Target:       "http://gateway-host:9000",
+		},
+		resolver,
+	)
+	if err != nil {
+		t.Fatalf("NewRealHTTPService() error = %v", err)
+	}
+
+	err = service.Mount(context.Background())
+
+	if !nativeerrors.Is(err, resolveErr) {
+		t.Errorf(
+			"expected error %v, got %v",
+			resolveErr,
+			err,
+		)
+	}
+
+	if service.server != nil {
+		t.Error("expected server not to be created")
+	}
+
+	if service.GetRuntimeAddress() != "" {
+		t.Errorf(
+			"expected empty runtime address, got %q",
+			service.GetRuntimeAddress(),
+		)
+	}
+}
+
 func TestRealHTTPServiceTargetHost(t *testing.T) {
 	var targetHost string
 
@@ -286,12 +424,7 @@ func TestRealHTTPServiceHTTPS(t *testing.T) {
 	// httptest.NewTLSServer uses a test certificate which is not trusted
 	// by the default transport used by ReverseProxy.
 	//
-	// Replace the proxy target with a TLS server whose certificate is
-	// trusted by the process would turn this into a transport
-	// configuration test rather than a RealHTTPService test.
-	//
-	// Therefore this test documents the expected behavior of an
-	// untrusted HTTPS target: the proxy must return Bad Gateway.
+	// Therefore, the proxy should return Bad Gateway for this target.
 
 	req, err := http.NewRequestWithContext(
 		t.Context(),
@@ -324,8 +457,7 @@ func TestRealHTTPServiceUpstreamUnavailable(t *testing.T) {
 			w http.ResponseWriter,
 			r *http.Request,
 		) {
-		},
-		),
+		}),
 	)
 
 	target := upstream.URL
@@ -411,26 +543,38 @@ func TestRealHTTPServiceUnmountBeforeMount(t *testing.T) {
 func newTestRealHTTPService(
 	t *testing.T,
 	target string,
-) *httpservice.RealHTTPService {
+) *RealHTTPService {
 	t.Helper()
 
 	logger, err := log.NewSilentLogger()
 	if err != nil {
-		t.Fatalf(
-			"cannot create silent logger: %v",
-			err,
-		)
+		t.Fatalf("cannot create silent logger: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := logger.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
 
-	service, err := httpservice.NewRealHTTPService(
+	ctrl := gomock.NewController(t)
+
+	resolver := NewMockaddressResolver(ctrl)
+
+	resolver.EXPECT().
+		ResolveHTTPURL(target).
+		Return(target, nil).
+		AnyTimes()
+
+	service, err := NewRealHTTPService(
 		logger,
 		&model.ServiceSpec{
-			ID:         "service-1",
-			Kind:       model.ServiceKindHTTP,
-			Mode:       model.ServiceModeReal,
-			Address:    "service:8080",
-			HTTPTarget: target,
+			ID:           "service-1",
+			Kind:         model.ServiceKindHTTP,
+			Mode:         model.ServiceModeReal,
+			E2EnginePort: 8080,
+			Target:       target,
 		},
+		resolver,
 	)
 	if err != nil {
 		t.Fatalf(

@@ -20,7 +20,7 @@ import (
 var validationRules []modellib.Rule
 
 func init() {
-	validationRules = make([]modellib.Rule, 8)
+	validationRules = make([]modellib.Rule, 9)
 
 	idRule, err := getIDRule()
 	if err != nil {
@@ -62,6 +62,11 @@ func init() {
 		panic(err)
 	}
 
+	ipRule, err := getIPRule()
+	if err != nil {
+		panic(err)
+	}
+
 	validationRules[0] = idRule
 	validationRules[1] = networkAddressRule
 	validationRules[2] = httpURLRule
@@ -70,6 +75,7 @@ func init() {
 	validationRules[5] = stringMatchersRule
 	validationRules[6] = stringMatcherValidJSONRule
 	validationRules[7] = grpcMessageMatcherRule
+	validationRules[8] = ipRule
 
 	environmentBinding, err = modellib.NewBinding[Environment](modellib.WithRules(validationRules...))
 	if err != nil {
@@ -104,118 +110,121 @@ func getIDRule() (modellib.Rule, error) {
 
 func getNetworkAddressRule() (modellib.Rule, error) {
 	return modellib.NewRule[string]("networkaddress", func(address string, _ ...string) error {
-		if address == "" {
-			return errorc.New("network address must not be empty")
-		}
-
-		host, portRaw, err := net.SplitHostPort(address)
-		if err != nil {
-			return errorc.With(
-				errors.ErrInvalidSpec,
-				errorc.String(keys.Validation, "network address must be in host:port form"),
-				errorc.Error(keys.Cause, err),
-			)
-		}
-
-		if strings.TrimSpace(host) == "" {
-			return errorc.With(
-				errors.ErrInvalidSpec,
-				errorc.String(keys.Validation, "network address host must not be empty"),
-			)
-		}
-
-		port, err := strconv.ParseUint(portRaw, 10, 16)
-		if err != nil || port == 0 {
-			return errorc.With(
-				errors.ErrInvalidSpec,
-				errorc.String(
-					keys.Validation,
-					"network address port must be an integer between 1 and 65535",
-				),
-			)
-		}
-
-		return nil
+		return validateNetworkAddress(address)
 	})
+}
+
+func validateNetworkAddress(address string) error {
+	if address == "" {
+		return errorc.New("network address must not be empty")
+	}
+
+	host, portRaw, err := net.SplitHostPort(address)
+	if err != nil {
+		return errorc.With(
+			errors.ErrInvalidSpec,
+			errorc.String(keys.Validation, "network address must be in host:port form"),
+			errorc.Error(keys.Cause, err),
+		)
+	}
+
+	if strings.TrimSpace(host) == "" {
+		return errorc.With(
+			errors.ErrInvalidSpec,
+			errorc.String(keys.Validation, "network address host must not be empty"),
+		)
+	}
+
+	port, err := strconv.ParseUint(portRaw, 10, 16)
+	if err != nil || port == 0 {
+		return errorc.With(
+			errors.ErrInvalidSpec,
+			errorc.String(
+				keys.Validation,
+				"network address port must be an integer between 1 and 65535",
+			),
+		)
+	}
+
+	return nil
 }
 
 func getHTTPURLRule() (modellib.Rule, error) {
 	return modellib.NewRule[string](
 		"httpurl",
 		func(value string, _ ...string) error {
-			u, err := url.ParseRequestURI(value)
-			if err != nil {
-				return errorc.With(
-					errors.ErrInvalidSpec,
-					errorc.String(
-						keys.Validation,
-						"target must be a valid HTTP URL",
-					),
-					errorc.Error(keys.Cause, err),
-				)
-			}
-
-			if u.Scheme != "http" &&
-				u.Scheme != "https" {
-				return errorc.With(
-					errors.ErrInvalidSpec,
-					errorc.String(
-						keys.Validation,
-						"target URL scheme must be http or https",
-					),
-				)
-			}
-
-			if u.Host == "" {
-				return errorc.With(
-					errors.ErrInvalidSpec,
-					errorc.String(
-						keys.Validation,
-						"target URL host must not be empty",
-					),
-				)
-			}
-
-			if u.User != nil {
-				return errorc.With(
-					errors.ErrInvalidSpec,
-					errorc.String(
-						keys.Validation,
-						"target URL must not contain user info",
-					),
-				)
-			}
-
-			if u.RawQuery != "" || u.Fragment != "" {
-				return errorc.With(
-					errors.ErrInvalidSpec,
-					errorc.String(
-						keys.Validation,
-						"target URL must not contain query parameters or fragment",
-					),
-				)
-			}
-
-			if portRaw := u.Port(); portRaw != "" {
-				port, err := strconv.ParseUint(
-					portRaw,
-					10,
-					16,
-				)
-				if err != nil || port == 0 {
-					return errorc.With(
-						errors.ErrInvalidSpec,
-						errorc.String(
-							keys.Validation,
-							"target URL port must be an integer between 1 and 65535",
-						),
-					)
-				}
-			}
-
-			return nil
+			return validateHTTPURL(value)
 		},
 	)
+}
+
+func validateHTTPURL(value string) error {
+	u, err := url.ParseRequestURI(value)
+	if err != nil {
+		return errorc.With(
+			errors.ErrInvalidSpec,
+			errorc.String(
+				keys.Validation,
+				"target must be a valid HTTP URL",
+			),
+			errorc.Error(keys.Cause, err),
+		)
+	}
+
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return errorc.With(
+			errors.ErrInvalidSpec,
+			errorc.String(
+				keys.Validation,
+				"target URL scheme must be http or https",
+			),
+		)
+	}
+
+	if u.Host == "" {
+		return errorc.With(
+			errors.ErrInvalidSpec,
+			errorc.String(
+				keys.Validation,
+				"target URL host must not be empty",
+			),
+		)
+	}
+
+	if u.User != nil {
+		return errorc.With(
+			errors.ErrInvalidSpec,
+			errorc.String(
+				keys.Validation,
+				"target URL must not contain user info",
+			),
+		)
+	}
+
+	if u.RawQuery != "" || u.Fragment != "" {
+		return errorc.With(
+			errors.ErrInvalidSpec,
+			errorc.String(
+				keys.Validation,
+				"target URL must not contain query parameters or fragment",
+			),
+		)
+	}
+
+	if portRaw := u.Port(); portRaw != "" {
+		port, err := strconv.ParseUint(portRaw, 10, 16)
+		if err != nil || port == 0 {
+			return errorc.With(
+				errors.ErrInvalidSpec,
+				errorc.String(
+					keys.Validation,
+					"target URL port must be an integer between 1 and 65535",
+				),
+			)
+		}
+	}
+
+	return nil
 }
 
 func getValidJSONRule() (modellib.Rule, error) {
@@ -230,6 +239,15 @@ func getValidJSONRule() (modellib.Rule, error) {
 			)
 		}
 
+		return nil
+	})
+}
+
+func getIPRule() (modellib.Rule, error) {
+	return modellib.NewRule[string]("ip", func(ip string, _ ...string) error {
+		if net.ParseIP(ip) == nil {
+			return errorc.New("invalid E2Engine listen interface IP address")
+		}
 		return nil
 	})
 }

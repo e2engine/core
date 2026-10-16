@@ -86,6 +86,10 @@ func (s *MockHTTPService) GetRuntimeAddress() string {
 }
 
 func (s *MockHTTPService) Unmount(ctx context.Context) error {
+	if s.server == nil {
+		return nil
+	}
+
 	return s.server.Shutdown(ctx)
 }
 

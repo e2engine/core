@@ -13,20 +13,23 @@ import (
 )
 
 type TestExecutor struct {
-	client    *http.Client
-	evaluator *Evaluator
-	reporter  executionReporter
+	client          *http.Client
+	evaluator       *Evaluator
+	reporter        executionReporter
+	addressResolver addressResolver
 }
 
 func NewTestExecutor(
 	client *http.Client,
 	evaluator *Evaluator,
 	reporter executionReporter,
+	addressResolver addressResolver,
 ) *TestExecutor {
 	return &TestExecutor{
-		client:    client,
-		evaluator: evaluator,
-		reporter:  reporter,
+		client:          client,
+		evaluator:       evaluator,
+		reporter:        reporter,
+		addressResolver: addressResolver,
 	}
 }
 
@@ -34,8 +37,16 @@ func (e *TestExecutor) Execute(
 	ctx context.Context,
 	job *execute.TestJob,
 ) error {
+	resolvedURL, err := e.addressResolver.ResolveHTTPURL(
+		job.Test.Spec.Request.HTTP.URL,
+	)
+	if err != nil {
+		return err
+	}
+
 	req, err := buildHTTPRequest(
 		ctx,
+		resolvedURL,
 		job.Test.Spec.Request.HTTP,
 		job.ExecutionID,
 	)
@@ -66,6 +77,7 @@ func (e *TestExecutor) Execute(
 
 func buildHTTPRequest(
 	ctx context.Context,
+	resolvedURL string,
 	spec *model.HTTPRequest,
 	testExecutionID string,
 ) (*http.Request, error) {
@@ -80,7 +92,7 @@ func buildHTTPRequest(
 	req, err := http.NewRequestWithContext(
 		ctx,
 		spec.Method,
-		spec.URL,
+		resolvedURL,
 		body,
 	)
 	if err != nil {

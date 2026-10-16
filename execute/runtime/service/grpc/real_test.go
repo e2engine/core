@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/mock/gomock"
 	ggrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -204,6 +205,43 @@ func TestRealGRPCServiceMountCanceledContext(t *testing.T) {
 	}
 }
 
+func TestRealGRPCServiceMountAddressResolutionError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	addressResolver := NewMockaddressResolver(ctrl)
+
+	resolveErr := nativeerrors.New("cannot resolve target")
+
+	addressResolver.EXPECT().
+		ResolveGRPCTarget("gateway-host:9000").
+		Return("", resolveErr)
+
+	service := &RealGRPCService{
+		spec: &model.ServiceSpec{
+			Target: "gateway-host:9000",
+		},
+		addressResolver: addressResolver,
+	}
+
+	err := service.Mount(context.Background())
+
+	if !nativeerrors.Is(err, resolveErr) {
+		t.Errorf(
+			"expected %v, got %v",
+			resolveErr,
+			err,
+		)
+	}
+
+	if service.server != nil {
+		t.Error("expected server not to be created")
+	}
+
+	if service.connection != nil {
+		t.Error("expected connection not to be created")
+	}
+}
+
 func TestRealGRPCServiceUnmountBeforeMount(t *testing.T) {
 	service := &RealGRPCService{}
 
@@ -301,6 +339,14 @@ func TestRealGRPCServiceProxy(t *testing.T) {
 
 	defer upstream.Stop()
 
+	ctrl := gomock.NewController(t)
+
+	resolver := NewMockaddressResolver(ctrl)
+
+	resolver.EXPECT().
+		ResolveGRPCTarget("gateway-host:9000").
+		Return(upstreamListener.Addr().String(), nil)
+
 	logger, err := log.NewSilentLogger()
 	if err != nil {
 		t.Fatalf(
@@ -312,9 +358,10 @@ func TestRealGRPCServiceProxy(t *testing.T) {
 	service, err := NewRealGRPCService(
 		logger,
 		&model.ServiceSpec{
-			ID:         "upstream",
-			GRPCTarget: upstreamListener.Addr().String(),
+			ID:     "upstream",
+			Target: "gateway-host:9000",
 		},
+		resolver,
 	)
 	if err != nil {
 		t.Fatalf(

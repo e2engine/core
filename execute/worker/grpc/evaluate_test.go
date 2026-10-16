@@ -992,7 +992,8 @@ func newTestEvaluator(
 
 func testServiceSpec() *model.ServiceSpec {
 	return &model.ServiceSpec{
-		ID: "service-1",
+		ID:   "service-1",
+		Kind: model.ServiceKindGRPC,
 		Proto: &model.GRPCProtoSpec{
 			Internal: &model.GRPCInternalProtoSpec{
 				Package: "users",

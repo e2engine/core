@@ -3,7 +3,12 @@ package model
 import "github.com/e2engine/core/model/matcher"
 
 type GRPCRequest struct {
-	Target   string              `json:"target" yaml:"target" validate:"networkaddress"`
+	// Target is the gRPC server address to connect to.
+	Target string `json:"target" yaml:"target" validate:"networkaddress"`
+
+	// Proto is the gRPC proto specification used to encode and decode messages.
+	Proto *GRPCProtoSpec `json:"proto,omitempty" yaml:"proto,omitempty" validateElem:"omitempty,dive"`
+
 	Service  string              `json:"service" yaml:"service" validate:"min(1)"`
 	Method   string              `json:"method" yaml:"method" validate:"min(1)"`
 	Metadata map[string][]string `json:"metadata,omitempty" yaml:"metadata,omitempty"`

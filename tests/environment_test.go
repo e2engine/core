@@ -470,11 +470,11 @@ func validEnvironmentSpec() model.EnvironmentSpec {
 	return model.EnvironmentSpec{
 		Services: []model.ServiceSpec{
 			{
-				ID:         "api",
-				Kind:       model.ServiceKindHTTP,
-				Mode:       model.ServiceModeReal,
-				Address:    "api:8080",
-				HTTPTarget: "http://localhost:8080",
+				ID:           "api",
+				Kind:         model.ServiceKindHTTP,
+				Mode:         model.ServiceModeReal,
+				E2EnginePort: 8080,
+				Target:       "http://localhost:8080",
 			},
 		},
 	}

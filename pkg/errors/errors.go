@@ -60,6 +60,10 @@ var (
 	ErrUnsupportedFileType = errorc.New("unsupported file type")
 
 	ErrInvalidGRPCMessageMatcher = errorc.New("invalid gRPC message matcher")
+
+	ErrInvalidHTTPURL         = errorc.New("invalid HTTP URL")
+	ErrInvalidHostnameMapping = errorc.New("invalid hostname mapping")
+	ErrInvalidGRPCTarget      = errorc.New("invalid gRPC target")
 )
 
 // Is wraps native errors package Is.

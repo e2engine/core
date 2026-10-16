@@ -41,8 +41,11 @@ var (
 
 	MatcherOperator = keys.New("matcher.operator")
 
-	RequestMethod  = request("method")
-	RequestURLPath = request("url.path")
+	URL                 = keys.New("url")
+	HostnameMappingFrom = keys.New("hostname.mapping.from")
+	HostnameMappingTo   = keys.New("hostname.mapping.to")
+	RequestMethod       = request("method")
+	RequestURLPath      = request("url.path")
 
 	HTTPStatusCode   = http("status.code")
 	HTTPResponseBody = http("response.body")

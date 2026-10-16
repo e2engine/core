@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/mock/gomock"
+
 	"github.com/e2engine/core/execute"
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/model"
@@ -151,6 +153,7 @@ func TestWorkerExecutePassed(t *testing.T) {
 	defer server.Close()
 
 	worker := newHTTPTestWorker(
+		t,
 		server.Client(),
 	)
 
@@ -223,6 +226,7 @@ func TestWorkerExecuteFailed(t *testing.T) {
 	defer server.Close()
 
 	worker := newHTTPTestWorker(
+		t,
 		server.Client(),
 	)
 
@@ -314,6 +318,7 @@ func TestWorkerExecuteExecutorError(t *testing.T) {
 	server.Close()
 
 	worker := newHTTPTestWorker(
+		t,
 		client,
 	)
 
@@ -383,6 +388,7 @@ func TestWorkerExecuteInvalidExpectedCalls(t *testing.T) {
 	defer server.Close()
 
 	worker := newHTTPTestWorker(
+		t,
 		server.Client(),
 	)
 
@@ -465,7 +471,8 @@ func TestWorkerExecuteInvalidTest(t *testing.T) {
 		cfg: &Config{
 			TestTimeout: time.Second,
 		},
-		client: http.DefaultClient,
+		client:          http.DefaultClient,
+		addressResolver: newTestAddressResolver(t),
 	}
 
 	job := execute.TestJob{
@@ -535,7 +542,8 @@ func TestWorkerExecuteNilReporterConfig(t *testing.T) {
 			TestTimeout: time.Second,
 			Reporter:    nil,
 		},
-		client: server.Client(),
+		client:          server.Client(),
+		addressResolver: newTestAddressResolver(t),
 	}
 
 	job := newHTTPTestJob(
@@ -565,14 +573,34 @@ func TestWorkerExecuteNilReporterConfig(t *testing.T) {
 }
 
 func newHTTPTestWorker(
+	t *testing.T,
 	client *http.Client,
 ) *Worker {
+	t.Helper()
+
 	return &Worker{
 		cfg: &Config{
 			TestTimeout: time.Second,
 		},
-		client: client,
+		client:          client,
+		addressResolver: newTestAddressResolver(t),
 	}
+}
+
+func newTestAddressResolver(t *testing.T) *MockaddressResolver {
+	t.Helper()
+
+	ctrl := gomock.NewController(t)
+	resolver := NewMockaddressResolver(ctrl)
+
+	resolver.EXPECT().
+		ResolveHTTPURL(gomock.Any()).
+		DoAndReturn(func(value string) (string, error) {
+			return value, nil
+		}).
+		AnyTimes()
+
+	return resolver
 }
 
 func newHTTPTestJob(
