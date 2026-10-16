@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 	nativeerrors "errors"
+	"net"
+	"strconv"
 	"sync"
 
 	"github.com/ygrebnov/errorc"
@@ -83,9 +85,12 @@ func (e *Environment) Mount(ctx context.Context) error {
 		}
 
 		route := &Route{
-			ServiceID:      e.spec.Services[i].ID,
-			Kind:           e.spec.Services[i].Kind,
-			ListenAddress:  e.spec.Services[i].Address,
+			ServiceID: e.spec.Services[i].ID,
+			Kind:      e.spec.Services[i].Kind,
+			ListenAddress: net.JoinHostPort(
+				e.cfg.E2EngineListenInterface,
+				strconv.Itoa(e.spec.Services[i].E2EnginePort),
+			),
 			RuntimeAddress: e.services[i].GetRuntimeAddress(),
 		}
 

@@ -16,11 +16,13 @@ type Provider struct {
 	cfg                *config.ProviderConfig
 	logger             log.Logger
 	grpcMethodResolver grpcservice.MethodResolver
+	addressResolver    addressResolver
 }
 
 func NewProvider(
 	cfg *config.ProviderConfig,
 	logger log.Logger,
+	addressResolver addressResolver,
 ) *Provider {
 	if cfg == nil {
 		cfg = &config.ProviderConfig{}
@@ -41,6 +43,7 @@ func NewProvider(
 		cfg:                cfg,
 		logger:             logger,
 		grpcMethodResolver: methodResolver,
+		addressResolver:    addressResolver,
 	}
 }
 
@@ -64,6 +67,7 @@ func (p *Provider) GetService(
 		return httpservice.NewRealHTTPService(
 			p.logger,
 			spec,
+			p.addressResolver,
 		)
 
 	case spec.Kind == model.ServiceKindGRPC &&
@@ -79,6 +83,7 @@ func (p *Provider) GetService(
 		return grpcservice.NewRealGRPCService(
 			p.logger,
 			spec,
+			p.addressResolver,
 		)
 
 	default:

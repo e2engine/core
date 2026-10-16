@@ -938,11 +938,11 @@ func newTestMockHTTPService(
 	return httpservice.NewMockHTTPService(
 		logger,
 		&model.ServiceSpec{
-			ID:       "service-1",
-			Kind:     model.ServiceKindHTTP,
-			Mode:     model.ServiceModeMocked,
-			Address:  "127.0.0.1:8080",
-			Fixtures: fixtures,
+			ID:           "service-1",
+			Kind:         model.ServiceKindHTTP,
+			Mode:         model.ServiceModeMocked,
+			E2EnginePort: 8080,
+			Fixtures:     fixtures,
 		},
 	)
 }

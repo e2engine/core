@@ -25,6 +25,7 @@ type Worker struct {
 
 	client             *http.Client
 	grpcMethodResolver grpcservice.MethodResolver
+	addressResolver    addressResolver
 }
 
 type Config struct {
@@ -36,6 +37,7 @@ func NewWorker(
 	cfg *Config,
 	logger log.Logger,
 	grpcMethodResolver grpcservice.MethodResolver,
+	addressResolver addressResolver,
 ) *Worker {
 	client := http.DefaultClient // TODO: make it configurable.
 
@@ -45,6 +47,7 @@ func NewWorker(
 
 		client:             client,
 		grpcMethodResolver: grpcMethodResolver,
+		addressResolver:    addressResolver,
 	}
 }
 
@@ -97,6 +100,7 @@ func (w *Worker) Execute(
 			w.client,
 			httpEvaluator,
 			reporter,
+			w.addressResolver,
 		)
 
 	case job.Test.Spec.Request.GRPC != nil:
@@ -104,6 +108,7 @@ func (w *Worker) Execute(
 			w.grpcMethodResolver,
 			grpcEvaluator,
 			reporter,
+			w.addressResolver,
 		)
 
 	default:

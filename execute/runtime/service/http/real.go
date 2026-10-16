@@ -16,11 +16,12 @@ import (
 // RealHTTPService exposes a real HTTP service through an execution-local
 // runtime address.
 //
-// ServiceSpec.Address is the logical address owned by EnvironmentRouter.
 // ServiceSpec.Target is the actual address of the real service.
 type RealHTTPService struct {
 	logger log.Logger
 	spec   *model.ServiceSpec
+
+	addressResolver addressResolver
 
 	server         *http.Server
 	runtimeAddress string
@@ -29,6 +30,7 @@ type RealHTTPService struct {
 func NewRealHTTPService(
 	logger log.Logger,
 	spec *model.ServiceSpec,
+	addressResolver addressResolver,
 ) (*RealHTTPService, error) {
 	return &RealHTTPService{
 		logger: logger.With(
@@ -36,7 +38,8 @@ func NewRealHTTPService(
 			log.String(keys.EnvironmentServiceKind, string(spec.Kind)),
 			log.String(keys.EnvironmentServiceMode, string(spec.Mode)),
 		),
-		spec: spec,
+		spec:            spec,
+		addressResolver: addressResolver,
 	}, nil
 }
 
@@ -45,13 +48,21 @@ func (s *RealHTTPService) Mount(ctx context.Context) error {
 		return err
 	}
 
-	target, err := url.Parse(s.spec.HTTPTarget)
+	resolvedTarget, err := s.addressResolver.ResolveHTTPURL(s.spec.Target)
+	if err != nil {
+		return err
+	}
+
+	target, err := url.Parse(resolvedTarget)
 	if err != nil {
 		return err
 	}
 
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(preq *httputil.ProxyRequest) {
+			// SetURL uses the resolved target hostname for the upstream Host header.
+			// Services using virtual-host routing may require the original logical
+			// hostname instead. Revisit Host/SNI handling if such services are supported.
 			preq.SetURL(target)
 		},
 	}

@@ -861,8 +861,15 @@ func newTestEnvironment(
 	t *testing.T,
 	services []runtime.Service,
 	router runtime.Router,
+	listenInterface ...string,
 ) *runtime.Environment {
 	t.Helper()
+
+	interfaceAddress := "127.0.0.1"
+
+	if len(listenInterface) > 0 {
+		interfaceAddress = listenInterface[0]
+	}
 
 	logger, err := log.NewSilentLogger()
 	if err != nil {
@@ -878,10 +885,10 @@ func newTestEnvironment(
 
 	for i := range services {
 		spec.Services[i] = model.ServiceSpec{
-			ID:      fmt.Sprintf("service-%d", i+1),
-			Kind:    model.ServiceKindHTTP,
-			Mode:    model.ServiceModeMocked,
-			Address: fmt.Sprintf("127.0.0.1:808%d", i+1),
+			ID:           fmt.Sprintf("service-%d", i+1),
+			Kind:         model.ServiceKindHTTP,
+			Mode:         model.ServiceModeMocked,
+			E2EnginePort: 8081 + i,
 			Fixtures: []model.FixtureSpec{
 				{
 					When: model.FixtureWhen{
@@ -926,6 +933,7 @@ func newTestEnvironment(
 	env, err := runtime.NewEnvironment(
 		context.Background(),
 		&config.Config{
+			E2EngineListenInterface:   interfaceAddress,
 			EnvironmentCleanupTimeout: time.Second,
 		},
 		logger,
@@ -961,6 +969,7 @@ func newTestEnvironmentController(
 
 	return runtime.NewEnvironmentController(
 		&config.Config{
+			E2EngineListenInterface:   "127.0.0.1",
 			EnvironmentCleanupTimeout: time.Second,
 		},
 		logger,
@@ -979,10 +988,10 @@ func validTestEnvironment() *model.Environment {
 		Spec: model.EnvironmentSpec{
 			Services: []model.ServiceSpec{
 				{
-					ID:      "7398ab887149ec5aa583c564a659a0b0a933ef27bacb675b081a2a752d8a3896",
-					Kind:    model.ServiceKindHTTP,
-					Mode:    model.ServiceModeMocked,
-					Address: "127.0.0.1:8081",
+					ID:           "7398ab887149ec5aa583c564a659a0b0a933ef27bacb675b081a2a752d8a3896",
+					Kind:         model.ServiceKindHTTP,
+					Mode:         model.ServiceModeMocked,
+					E2EnginePort: 8081,
 					Fixtures: []model.FixtureSpec{
 						{
 							When: model.FixtureWhen{
@@ -1085,5 +1094,45 @@ func TestEnvironmentMountRouterErrorUsesCleanupContext(
 			"expected ErrFailedToMountRouter, got %v",
 			err,
 		)
+	}
+}
+
+func TestEnvironmentMountCustomListenInterface(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	service := mock.NewMockService(ctrl)
+	router := mock.NewMockRouter(ctrl)
+
+	env := newTestEnvironment(
+		t,
+		[]runtime.Service{service},
+		router,
+		"0.0.0.0",
+	)
+
+	gomock.InOrder(
+		service.EXPECT().
+			Mount(gomock.Any()).
+			Return(nil),
+
+		service.EXPECT().
+			GetRuntimeAddress().
+			Return("127.0.0.1:10001"),
+
+		router.EXPECT().
+			Register(&runtime.Route{
+				ServiceID:      "service-1",
+				Kind:           model.ServiceKindHTTP,
+				ListenAddress:  "0.0.0.0:8081",
+				RuntimeAddress: "127.0.0.1:10001",
+			}),
+
+		router.EXPECT().
+			Mount(gomock.Any()).
+			Return(nil),
+	)
+
+	if err := env.Mount(context.Background()); err != nil {
+		t.Fatalf("Mount() error = %v", err)
 	}
 }

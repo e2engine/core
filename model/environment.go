@@ -43,7 +43,7 @@ func (e *Environment) Validate(ctx context.Context) error {
 	}
 
 	serviceIDs := make(map[string]struct{}, len(e.Spec.Services))
-	addresses := make(map[string]struct{}, len(e.Spec.Services))
+	ports := make(map[int]struct{}, len(e.Spec.Services))
 
 	for i := range e.Spec.Services {
 		service := &e.Spec.Services[i]
@@ -58,16 +58,19 @@ func (e *Environment) Validate(ctx context.Context) error {
 		}
 		serviceIDs[service.ID] = struct{}{}
 
-		if _, ok := addresses[service.Address]; ok {
+		if _, ok := ports[service.E2EnginePort]; ok {
 			return errorc.With(
 				errors.ErrInvalidSpec,
 				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
 				errorc.String(keys.EnvironmentServiceID, service.ID),
-				errorc.String(keys.EnvironmentServiceListenAddress, service.Address),
-				errorc.String(keys.Validation, "service addresses must be unique"),
+				errorc.String(
+					keys.Validation,
+					"e2engine ports must be unique within an environment",
+				),
 			)
 		}
-		addresses[service.Address] = struct{}{}
+
+		ports[service.E2EnginePort] = struct{}{}
 
 		if err := service.Validate(); err != nil {
 			return err
@@ -99,19 +102,16 @@ type ServiceSpec struct {
 	ID   string      `json:"id" yaml:"id" validate:"min(3),max(200)"`
 	Kind ServiceKind `json:"kind" yaml:"kind" validate:"oneof(http,grpc)"`
 	Mode ServiceMode `json:"mode" yaml:"mode" validate:"oneof(real,mocked)"`
-	// Stable logical address used inside the environment.
-	Address string `json:"address" yaml:"address" validate:"networkaddress"`
 
-	// Actual destination of a real service.
-	HTTPTarget string `json:"http_target,omitempty" yaml:"http_target,omitempty" validate:"omitempty,httpurl"`
-	GRPCTarget string `json:"grpc_target,omitempty" yaml:"grpc_target,omitempty" validate:"omitempty,networkaddress"`
+	E2EnginePort int `json:"e2engine_port" yaml:"e2engine_port" validate:"min(1),max(65535)"`
+
+	// Required for real services, forbidden for mocked services.
+	// The hostname may be overridden by runtime hostname mappings.
+	Target string `json:"target,omitempty" yaml:"target,omitempty"`
 
 	RequestDefaults *RequestDefaults `json:"request_defaults,omitempty" yaml:"request_defaults,omitempty" validateElem:"omitempty,dive"`
-
-	Fixtures []FixtureSpec `json:"fixtures,omitempty" yaml:"fixtures,omitempty" validateElem:"dive"`
-
-	// gRPC-only
-	Proto *GRPCProtoSpec `json:"proto,omitempty" yaml:"proto,omitempty" validateElem:"omitempty,dive"`
+	Fixtures        []FixtureSpec    `json:"fixtures,omitempty" yaml:"fixtures,omitempty" validateElem:"dive"`
+	Proto           *GRPCProtoSpec   `json:"proto,omitempty" yaml:"proto,omitempty" validateElem:"omitempty,dive"`
 }
 
 func (s *ServiceSpec) Validate() error {
@@ -123,6 +123,7 @@ func (s *ServiceSpec) Validate() error {
 				errorc.String(keys.Validation, "proto spec is not allowed for HTTP service"),
 			)
 		}
+
 		if s.RequestDefaults != nil && len(s.RequestDefaults.Metadata) > 0 {
 			return errorc.With(
 				errors.ErrInvalidSpec,
@@ -200,56 +201,30 @@ func (s *ServiceSpec) Validate() error {
 		}
 	}
 
-	if s.Mode == ServiceModeMocked {
-		if len(s.Fixtures) == 0 {
-			return errorc.With(
-				errors.ErrInvalidSpec,
-				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
-				errorc.String(keys.Validation, "mocked service must have at least one fixture"),
-			)
-		}
-
-		if s.HTTPTarget != "" || s.GRPCTarget != "" {
-			return errorc.With(
-				errors.ErrInvalidSpec,
-				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
-				errorc.String(keys.Validation, "mocked service must not have a target"),
-			)
-		}
+	if s.Mode == ServiceModeMocked && s.Target != "" {
+		return errorc.With(
+			errors.ErrInvalidSpec,
+			errorc.String(keys.Validation, "target is not allowed for mocked service"),
+		)
 	}
 
 	if s.Mode == ServiceModeReal {
-		if (s.Kind == ServiceKindHTTP && s.HTTPTarget == "") ||
-			(s.Kind == ServiceKindGRPC && s.GRPCTarget == "") {
+		if s.Target == "" {
 			return errorc.With(
 				errors.ErrInvalidSpec,
-				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
 				errorc.String(keys.Validation, "target is required for real service"),
 			)
 		}
 
-		if s.Kind == ServiceKindHTTP && s.GRPCTarget != "" {
-			return errorc.With(
-				errors.ErrInvalidSpec,
-				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
-				errorc.String(keys.Validation, "GRPC target is not allowed for HTTP service"),
-			)
-		}
-
-		if s.Kind == ServiceKindGRPC && s.HTTPTarget != "" {
-			return errorc.With(
-				errors.ErrInvalidSpec,
-				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
-				errorc.String(keys.Validation, "HTTP target is not allowed for GRPC service"),
-			)
-		}
-
-		if len(s.Fixtures) > 0 {
-			return errorc.With(
-				errors.ErrInvalidSpec,
-				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
-				errorc.String(keys.Validation, "fixtures are not allowed for real service"),
-			)
+		switch s.Kind {
+		case ServiceKindHTTP:
+			if err := validateHTTPURL(s.Target); err != nil {
+				return err
+			}
+		case ServiceKindGRPC:
+			if err := validateNetworkAddress(s.Target); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -265,6 +240,7 @@ func (s *ServiceSpec) Validate() error {
 					errorc.String(keys.Validation, "HTTP service fixture must contain HTTP when and then"),
 				)
 			}
+
 			if fixture.When.GRPC != nil || fixture.Then.GRPC != nil {
 				return errorc.With(
 					errors.ErrInvalidSpec,
@@ -282,6 +258,7 @@ func (s *ServiceSpec) Validate() error {
 					err,
 				)
 			}
+
 			if err := fixture.Then.HTTP.Validate(); err != nil {
 				return nativeerrors.Join(
 					errorc.With(
@@ -300,6 +277,7 @@ func (s *ServiceSpec) Validate() error {
 					errorc.String(keys.Validation, "gRPC service fixture must contain gRPC when and then"),
 				)
 			}
+
 			if fixture.When.HTTP != nil || fixture.Then.HTTP != nil {
 				return errorc.With(
 					errors.ErrInvalidSpec,

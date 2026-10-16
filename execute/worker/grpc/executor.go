@@ -20,20 +20,23 @@ import (
 )
 
 type TestExecutor struct {
-	resolver  servicegrpc.MethodResolver
-	evaluator *Evaluator
-	reporter  executionReporter
+	resolver        servicegrpc.MethodResolver
+	evaluator       *Evaluator
+	reporter        executionReporter
+	addressResolver addressResolver
 }
 
 func NewTestExecutor(
 	resolver servicegrpc.MethodResolver,
 	evaluator *Evaluator,
 	reporter executionReporter,
+	addressResolver addressResolver,
 ) *TestExecutor {
 	return &TestExecutor{
-		resolver:  resolver,
-		evaluator: evaluator,
-		reporter:  reporter,
+		resolver:        resolver,
+		evaluator:       evaluator,
+		reporter:        reporter,
+		addressResolver: addressResolver,
 	}
 }
 
@@ -43,17 +46,24 @@ func (e *TestExecutor) Execute(
 ) error {
 	spec := job.Test.Spec.Request.GRPC
 
-	service, err := findService(
-		job.Environment.Spec.Services,
-		spec.Target,
-	)
-	if err != nil {
-		return err
+	protoSpec := spec.Proto
+
+	if protoSpec == nil {
+		// TODO: for standalone test, return an error is no proto spec is provided.
+
+		var err error
+		protoSpec, err = findProtoSpec(
+			job.Environment.Spec.Services,
+			spec.Service,
+		)
+		if err != nil {
+			return err
+		}
 	}
 
 	method, err := e.resolver.ResolveMethod(
 		ctx,
-		service.Proto,
+		protoSpec,
 		spec.Method,
 	)
 	if err != nil {
@@ -74,8 +84,13 @@ func (e *TestExecutor) Execute(
 		)
 	}
 
+	resolvedTarget, err := e.addressResolver.ResolveGRPCTarget(spec.Target)
+	if err != nil {
+		return err
+	}
+
 	connection, err := ggrpc.NewClient(
-		spec.Target,
+		resolvedTarget,
 		ggrpc.WithTransportCredentials(
 			insecure.NewCredentials(),
 		),
@@ -101,7 +116,7 @@ func (e *TestExecutor) Execute(
 	var trailer metadata.MD
 
 	r := &model.GRPCRequest{
-		Target:   spec.Target,
+		Target:   resolvedTarget,
 		Service:  spec.Service,
 		Method:   spec.Method,
 		Metadata: callMetadata,
@@ -128,20 +143,54 @@ func (e *TestExecutor) Execute(
 	)
 }
 
-func findService(
+func findProtoSpec(
 	services []model.ServiceSpec,
-	target string,
-) (*model.ServiceSpec, error) {
+	serviceName string,
+) (*model.GRPCProtoSpec, error) {
+	var found *model.GRPCProtoSpec
+
 	for i := range services {
-		if services[i].Address == target {
-			return &services[i], nil
+		service := &services[i]
+
+		if service.Kind != model.ServiceKindGRPC || service.Proto == nil {
+			continue
 		}
+
+		var name string
+
+		switch {
+		case service.Proto.External != nil:
+			name = service.Proto.External.Service
+
+		case service.Proto.Internal != nil:
+			internal := service.Proto.Internal
+
+			name = internal.Service
+			if internal.Package != "" {
+				name = internal.Package + "." + internal.Service
+			}
+		}
+
+		if name != serviceName {
+			continue
+		}
+
+		if found != nil {
+			return nil, errorc.New(
+				"multiple protobuf specifications match gRPC service",
+			)
+		}
+
+		found = service.Proto
 	}
 
-	return nil, errorc.With(
-		errors.ErrGRPCTargetServiceNotFound,
-		errorc.String(keys.GRPCServiceTargetAddress, target),
-	)
+	if found == nil {
+		return nil, errorc.New(
+			"protobuf specification not found for gRPC service",
+		)
+	}
+
+	return found, nil
 }
 
 func unmarshalMap(

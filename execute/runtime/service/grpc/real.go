@@ -23,6 +23,8 @@ type RealGRPCService struct {
 	logger log.Logger
 	spec   *model.ServiceSpec
 
+	addressResolver addressResolver
+
 	server         *ggrpc.Server
 	connection     *ggrpc.ClientConn
 	runtimeAddress string
@@ -31,6 +33,7 @@ type RealGRPCService struct {
 func NewRealGRPCService(
 	logger log.Logger,
 	spec *model.ServiceSpec,
+	addressResolver addressResolver,
 ) (*RealGRPCService, error) {
 	return &RealGRPCService{
 		logger: logger.With(
@@ -38,7 +41,8 @@ func NewRealGRPCService(
 			log.String(keys.EnvironmentServiceKind, string(spec.Kind)),
 			log.String(keys.EnvironmentServiceMode, string(spec.Mode)),
 		),
-		spec: spec,
+		spec:            spec,
+		addressResolver: addressResolver,
 	}, nil
 }
 
@@ -47,10 +51,16 @@ func (s *RealGRPCService) Mount(ctx context.Context) error {
 		return err
 	}
 
+	resolvedTarget, err := s.addressResolver.ResolveGRPCTarget(s.spec.Target)
+	if err != nil {
+		return err
+	}
+
 	connection, err := ggrpc.NewClient(
-		s.spec.GRPCTarget,
+		resolvedTarget,
 		ggrpc.WithTransportCredentials(
 			insecure.NewCredentials(),
+			// TODO: preserve the logical hostname separately when introducing TLS support
 		),
 		ggrpc.WithDefaultCallOptions(
 			ggrpc.ForceCodec(rawCodec{}),

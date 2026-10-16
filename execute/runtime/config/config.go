@@ -10,6 +10,7 @@ type Config struct {
 	JobPublishTimeout         time.Duration   `json:"job_publish_timeout" yaml:"job_publish_timeout" env:"JOB_PUBLISH_TIMEOUT" default:"30s" validate:"min(1s)"`
 	ExecutionCheckTimeout     time.Duration   `json:"execution_check_timeout" yaml:"execution_check_timeout" env:"EXECUTION_CHECK_TIMEOUT" default:"30s" validate:"min(1s)"`
 	MaxResolvedTests          int             `json:"max_resolved_tests" yaml:"max_resolved_tests" env:"MAX_RESOLVED_TESTS" default:"1000" validate:"min(1)"`
+	E2EngineListenInterface   string          `json:"e2engine_listen_interface" yaml:"e2engine_listen_interface" env:"E2ENGINE_LISTEN_INTERFACE" default:"127.0.0.1" validate:"ip"`
 }
 
 type ProviderConfig struct {

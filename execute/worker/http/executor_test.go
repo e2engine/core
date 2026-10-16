@@ -91,6 +91,7 @@ func TestBuildHTTPRequest(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			req, err := buildHTTPRequest(
 				ctx,
+				tt.spec.URL,
 				tt.spec,
 				"execution-123",
 			)
@@ -195,6 +196,7 @@ func TestBuildHTTPRequestQuery(t *testing.T) {
 
 	req, err := buildHTTPRequest(
 		context.Background(),
+		spec.URL,
 		spec,
 		"execution-123",
 	)
@@ -253,6 +255,7 @@ func TestBuildHTTPRequestHeaders(t *testing.T) {
 
 	req, err := buildHTTPRequest(
 		context.Background(),
+		spec.URL,
 		spec,
 		"execution-123",
 	)
@@ -289,12 +292,15 @@ func TestBuildHTTPRequestCanceledContext(t *testing.T) {
 	)
 	cancel()
 
+	spec := &model.HTTPRequest{
+		Method: nethttp.MethodGet,
+		URL:    "https://example.com",
+	}
+
 	req, err := buildHTTPRequest(
 		ctx,
-		&model.HTTPRequest{
-			Method: nethttp.MethodGet,
-			URL:    "https://example.com",
-		},
+		spec.URL,
+		spec,
 		"execution-123",
 	)
 	if err != nil {
@@ -308,6 +314,40 @@ func TestBuildHTTPRequestCanceledContext(t *testing.T) {
 		t.Errorf(
 			"expected context.Canceled, got %v",
 			req.Context().Err(),
+		)
+	}
+}
+
+func TestBuildHTTPRequestResolvedURL(t *testing.T) {
+	spec := &model.HTTPRequest{
+		Method: nethttp.MethodGet,
+		URL:    "http://payment-api:8080/payments",
+	}
+
+	const resolvedURL = "http://127.0.0.1:8080/payments"
+
+	req, err := buildHTTPRequest(
+		t.Context(),
+		resolvedURL,
+		spec,
+		"execution-123",
+	)
+	if err != nil {
+		t.Fatalf("buildHTTPRequest() error = %v", err)
+	}
+
+	if actual := req.URL.String(); actual != resolvedURL {
+		t.Errorf(
+			"expected URL %q, got %q",
+			resolvedURL,
+			actual,
+		)
+	}
+
+	if spec.URL != "http://payment-api:8080/payments" {
+		t.Errorf(
+			"original URL was modified: %q",
+			spec.URL,
 		)
 	}
 }
@@ -450,8 +490,17 @@ func TestExecutorExecute(t *testing.T) {
 	)
 	defer server.Close()
 
+	const logicalURL = "http://payment-api:8080/users"
+	resolvedURL := server.URL + "/users"
+
 	ctrl := gomock.NewController(t)
+
 	reporter := NewMockexecutionReporter(ctrl)
+	addressResolver := NewMockaddressResolver(ctrl)
+
+	addressResolver.EXPECT().
+		ResolveHTTPURL(logicalURL).
+		Return(resolvedURL, nil)
 
 	evaluator := NewEvaluator(reporter)
 
@@ -459,6 +508,7 @@ func TestExecutorExecute(t *testing.T) {
 		server.Client(),
 		evaluator,
 		reporter,
+		addressResolver,
 	)
 
 	job := &execute.TestJob{
@@ -468,7 +518,7 @@ func TestExecutorExecute(t *testing.T) {
 				Request: model.RequestSpec{
 					HTTP: &model.HTTPRequest{
 						Method: nethttp.MethodGet,
-						URL:    server.URL,
+						URL:    logicalURL,
 					},
 				},
 				Expect: model.ExpectSpec{
@@ -494,10 +544,10 @@ func TestExecutorExecute(t *testing.T) {
 				)
 			}
 
-			if req.URL.String() != server.URL {
+			if req.URL.String() != resolvedURL {
 				t.Errorf(
-					"expected URL %q, got %q",
-					server.URL,
+					"expected resolved URL %q, got %q",
+					resolvedURL,
 					req.URL.String(),
 				)
 			}
@@ -544,6 +594,69 @@ func TestExecutorExecute(t *testing.T) {
 			err,
 		)
 	}
+
+	// Resolution must not modify the original Test specification.
+	if job.Test.Spec.Request.HTTP.URL != logicalURL {
+		t.Errorf(
+			"expected original URL %q, got %q",
+			logicalURL,
+			job.Test.Spec.Request.HTTP.URL,
+		)
+	}
+}
+
+func TestExecutorExecuteAddressResolutionError(t *testing.T) {
+	ctrl := gomock.NewController(t)
+
+	reporter := NewMockexecutionReporter(ctrl)
+	addressResolver := NewMockaddressResolver(ctrl)
+
+	evaluator := NewEvaluator(reporter)
+
+	executor := NewTestExecutor(
+		nethttp.DefaultClient,
+		evaluator,
+		reporter,
+		addressResolver,
+	)
+
+	const logicalURL = "http://payment-api:8080/payments"
+
+	resolveErr := nativeerrors.New("cannot resolve HTTP URL")
+
+	addressResolver.EXPECT().
+		ResolveHTTPURL(logicalURL).
+		Return("", resolveErr)
+
+	job := &execute.TestJob{
+		ExecutionID: "execution-123",
+		Test: model.Test{
+			Spec: model.TestSpec{
+				Request: model.RequestSpec{
+					HTTP: &model.HTTPRequest{
+						Method: nethttp.MethodGet,
+						URL:    logicalURL,
+					},
+				},
+			},
+		},
+	}
+
+	err := executor.Execute(
+		context.Background(),
+		job,
+	)
+
+	if !nativeerrors.Is(err, resolveErr) {
+		t.Errorf(
+			"expected error %v, got %v",
+			resolveErr,
+			err,
+		)
+	}
+
+	// No reporter calls should occur when address resolution fails.
+	// gomock verifies this because no expectations were registered.
 }
 
 func stringPtrExecutor(

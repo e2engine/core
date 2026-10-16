@@ -21,58 +21,56 @@ import (
 	servicegrpc "github.com/e2engine/core/execute/runtime/service/grpc"
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/model/matcher"
-	coreerrors "github.com/e2engine/core/pkg/errors"
 )
 
-func TestFindService(t *testing.T) {
-	services := []model.ServiceSpec{
-		{
-			ID:      "service-1",
-			Address: "localhost:50051",
-		},
-		{
-			ID:      "service-2",
-			Address: "localhost:50052",
-		},
-	}
+func TestFindProtoSpec(t *testing.T) {
+	service := testServiceSpec()
 
 	tests := []struct {
-		name     string
-		target   string
-		expected *model.ServiceSpec
-		err      error
+		name       string
+		services   []model.ServiceSpec
+		nameToFind string
+		wantErr    bool
 	}{
 		{
-			name:     "found",
-			target:   "localhost:50052",
-			expected: &services[1],
+			name:       "found",
+			services:   []model.ServiceSpec{*service},
+			nameToFind: "users.UserService",
 		},
 		{
-			name:   "not found",
-			target: "localhost:50053",
-			err:    coreerrors.ErrGRPCTargetServiceNotFound,
+			name:       "not found",
+			services:   []model.ServiceSpec{*service},
+			nameToFind: "users.MissingService",
+			wantErr:    true,
+		},
+		{
+			name:       "ambiguous",
+			services:   []model.ServiceSpec{*service, *service},
+			nameToFind: "users.UserService",
+			wantErr:    true,
+		},
+		{
+			name:       "empty services",
+			nameToFind: "users.UserService",
+			wantErr:    true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual, err := findService(
-				services,
-				tt.target,
+			actual, err := findProtoSpec(
+				tt.services,
+				tt.nameToFind,
 			)
 
-			if tt.err != nil {
-				if !errors.Is(err, tt.err) {
-					t.Fatalf(
-						"expected error %v, got %v",
-						tt.err,
-						err,
-					)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
 				}
 
 				if actual != nil {
 					t.Errorf(
-						"expected nil service, got %+v",
+						"expected nil proto specification, got %+v",
 						actual,
 					)
 				}
@@ -81,16 +79,13 @@ func TestFindService(t *testing.T) {
 			}
 
 			if err != nil {
-				t.Fatalf(
-					"findService() error = %v",
-					err,
-				)
+				t.Fatalf("findProtoSpec() error = %v", err)
 			}
 
-			if actual != tt.expected {
+			if !reflect.DeepEqual(actual, service.Proto) {
 				t.Errorf(
-					"expected service %+v, got %+v",
-					tt.expected,
+					"expected proto specification %+v, got %+v",
+					service.Proto,
 					actual,
 				)
 			}
@@ -143,9 +138,7 @@ func TestUnmarshalMap(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			message := dynamicpb.NewMessage(
-				descriptor,
-			)
+			message := dynamicpb.NewMessage(descriptor)
 
 			err := unmarshalMap(
 				tt.value,
@@ -156,15 +149,11 @@ func TestUnmarshalMap(t *testing.T) {
 				if err == nil {
 					t.Fatal("expected error")
 				}
-
 				return
 			}
 
 			if err != nil {
-				t.Fatalf(
-					"unmarshalMap() error = %v",
-					err,
-				)
+				t.Fatalf("unmarshalMap() error = %v", err)
 			}
 
 			if tt.value == nil {
@@ -287,9 +276,9 @@ func int32Ptr(value int32) *int32 {
 func TestExecutorExecute(t *testing.T) {
 	service := testServiceSpec()
 
-	resolver := servicegrpc.NewProtoMethodResolver(nil)
+	methodResolver := servicegrpc.NewProtoMethodResolver(nil)
 
-	method, err := resolver.ResolveMethod(
+	method, err := methodResolver.ResolveMethod(
 		context.Background(),
 		service.Proto,
 		"Create",
@@ -308,10 +297,7 @@ func TestExecutorExecute(t *testing.T) {
 		"127.0.0.1:0",
 	)
 	if err != nil {
-		t.Fatalf(
-			"listen: %v",
-			err,
-		)
+		t.Fatalf("listen: %v", err)
 	}
 	defer listener.Close()
 
@@ -325,9 +311,7 @@ func TestExecutorExecute(t *testing.T) {
 					stream.Context(),
 				)
 				if !ok {
-					t.Error(
-						"expected request metadata",
-					)
+					t.Error("expected request metadata")
 				}
 
 				if id := e2enginegrpc.TestExecutionID(
@@ -343,9 +327,7 @@ func TestExecutorExecute(t *testing.T) {
 					method.Input(),
 				)
 
-				if err := stream.RecvMsg(
-					request,
-				); err != nil {
+				if err := stream.RecvMsg(request); err != nil {
 					return err
 				}
 
@@ -392,9 +374,7 @@ func TestExecutorExecute(t *testing.T) {
 					),
 				)
 
-				return stream.SendMsg(
-					response,
-				)
+				return stream.SendMsg(response)
 			},
 		),
 	)
@@ -404,20 +384,29 @@ func TestExecutorExecute(t *testing.T) {
 	}()
 	defer server.Stop()
 
-	service.Address = listener.Addr().String()
+	const logicalTarget = "gateway-host:50051"
+
+	resolvedTarget := listener.Addr().String()
 
 	ctrl := gomock.NewController(t)
+
 	reporter := NewMockexecutionReporter(ctrl)
+	addressResolver := NewMockaddressResolver(ctrl)
+
+	addressResolver.EXPECT().
+		ResolveGRPCTarget(logicalTarget).
+		Return(resolvedTarget, nil)
 
 	evaluator := NewEvaluator(
-		resolver,
+		methodResolver,
 		reporter,
 	)
 
 	executor := NewTestExecutor(
-		resolver,
+		methodResolver,
 		evaluator,
 		reporter,
+		addressResolver,
 	)
 
 	job := &execute.TestJob{
@@ -433,7 +422,7 @@ func TestExecutorExecute(t *testing.T) {
 			Spec: model.TestSpec{
 				Request: model.RequestSpec{
 					GRPC: &model.GRPCRequest{
-						Target:  service.Address,
+						Target:  logicalTarget,
 						Service: "users.UserService",
 						Method:  "Create",
 						Metadata: map[string][]string{
@@ -463,10 +452,10 @@ func TestExecutorExecute(t *testing.T) {
 	reporter.EXPECT().
 		AddGRPCRequest(gomock.Any()).
 		Do(func(req *model.GRPCRequest) {
-			if req.Target != service.Address {
+			if req.Target != resolvedTarget {
 				t.Errorf(
 					"expected target %q, got %q",
-					service.Address,
+					resolvedTarget,
 					req.Target,
 				)
 			}
@@ -562,8 +551,235 @@ func TestExecutorExecute(t *testing.T) {
 		job,
 	)
 	if err != nil {
-		t.Fatalf(
-			"Execute() error = %v",
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	// Hostname resolution must not mutate the persisted Test specification.
+	if job.Test.Spec.Request.GRPC.Target != logicalTarget {
+		t.Errorf(
+			"expected original target %q, got %q",
+			logicalTarget,
+			job.Test.Spec.Request.GRPC.Target,
+		)
+	}
+}
+
+func TestExecutorExecuteWithTestLevelProto(t *testing.T) {
+	service := testServiceSpec()
+	methodResolver := servicegrpc.NewProtoMethodResolver(nil)
+
+	method, err := methodResolver.ResolveMethod(
+		context.Background(),
+		service.Proto,
+		"Create",
+	)
+	if err != nil {
+		t.Fatalf("ResolveMethod() error = %v", err)
+	}
+
+	listener, err := (&net.ListenConfig{}).Listen(
+		t.Context(),
+		"tcp",
+		"127.0.0.1:0",
+	)
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	defer listener.Close()
+
+	server := ggrpc.NewServer(
+		ggrpc.UnknownServiceHandler(
+			func(
+				_ any,
+				stream ggrpc.ServerStream,
+			) error {
+				request := dynamicpb.NewMessage(method.Input())
+
+				if err := stream.RecvMsg(request); err != nil {
+					return err
+				}
+
+				name := request.Get(
+					method.Input().Fields().ByName("name"),
+				).String()
+
+				if name != "Yaroslav" {
+					t.Errorf(
+						"expected request name %q, got %q",
+						"Yaroslav",
+						name,
+					)
+				}
+
+				response := dynamicpb.NewMessage(method.Output())
+				response.Set(
+					method.Output().Fields().ByName("id"),
+					protoreflect.ValueOfString("user-123"),
+				)
+
+				return stream.SendMsg(response)
+			},
+		),
+	)
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	defer server.Stop()
+
+	const logicalTarget = "gateway-host:50051"
+	resolvedTarget := listener.Addr().String()
+
+	ctrl := gomock.NewController(t)
+
+	reporter := NewMockexecutionReporter(ctrl)
+	addressResolver := NewMockaddressResolver(ctrl)
+
+	addressResolver.EXPECT().
+		ResolveGRPCTarget(logicalTarget).
+		Return(resolvedTarget, nil)
+
+	reporter.EXPECT().
+		AddGRPCRequest(gomock.Any()).
+		Do(func(request *model.GRPCRequest) {
+			if request.Target != resolvedTarget {
+				t.Errorf(
+					"expected resolved target %q, got %q",
+					resolvedTarget,
+					request.Target,
+				)
+			}
+		})
+
+	reporter.EXPECT().
+		AddGRPCResponseStatus("OK")
+
+	reporter.EXPECT().
+		AddGRPCResponseMetadata(gomock.Any()).
+		AnyTimes()
+
+	reporter.EXPECT().
+		AddGRPCResponseMessage(gomock.Any()).
+		AnyTimes()
+
+	executor := NewTestExecutor(
+		methodResolver,
+		NewEvaluator(methodResolver, reporter),
+		reporter,
+		addressResolver,
+	)
+
+	job := &execute.TestJob{
+		ExecutionID: "execution-123",
+
+		// No matching gRPC service or protobuf specification.
+		Environment: model.Environment{},
+
+		Test: model.Test{
+			Spec: model.TestSpec{
+				Request: model.RequestSpec{
+					GRPC: &model.GRPCRequest{
+						Target:  logicalTarget,
+						Service: "users.UserService",
+						Method:  "Create",
+
+						// Protobuf specification is provided by the Test.
+						Proto: service.Proto,
+
+						Message: map[string]any{
+							"name": "Yaroslav",
+						},
+					},
+				},
+				Expect: model.ExpectSpec{
+					GRPC: &model.GRPCResponsePattern{
+						Status: "OK",
+						Message: mapPtrExecutor(map[string]any{
+							"id": "user-123",
+						}),
+					},
+				},
+			},
+		},
+	}
+
+	if err := executor.Execute(t.Context(), job); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	if job.Test.Spec.Request.GRPC.Target != logicalTarget {
+		t.Errorf(
+			"expected original target %q, got %q",
+			logicalTarget,
+			job.Test.Spec.Request.GRPC.Target,
+		)
+	}
+}
+
+func TestExecutorExecuteAddressResolutionError(t *testing.T) {
+	service := testServiceSpec()
+
+	ctrl := gomock.NewController(t)
+
+	reporter := NewMockexecutionReporter(ctrl)
+	addressResolver := NewMockaddressResolver(ctrl)
+
+	methodResolver := servicegrpc.NewProtoMethodResolver(nil)
+
+	evaluator := NewEvaluator(
+		methodResolver,
+		reporter,
+	)
+
+	executor := NewTestExecutor(
+		methodResolver,
+		evaluator,
+		reporter,
+		addressResolver,
+	)
+
+	const logicalTarget = "gateway-host:50051"
+
+	resolveErr := errors.New("cannot resolve gRPC target")
+
+	addressResolver.EXPECT().
+		ResolveGRPCTarget(logicalTarget).
+		Return("", resolveErr)
+
+	job := &execute.TestJob{
+		ExecutionID: "execution-123",
+		Environment: model.Environment{
+			Spec: model.EnvironmentSpec{
+				Services: []model.ServiceSpec{
+					*service,
+				},
+			},
+		},
+		Test: model.Test{
+			Spec: model.TestSpec{
+				Request: model.RequestSpec{
+					GRPC: &model.GRPCRequest{
+						Target:  logicalTarget,
+						Service: "users.UserService",
+						Method:  "Create",
+						Message: map[string]any{
+							"name": "Yaroslav",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	err := executor.Execute(
+		context.Background(),
+		job,
+	)
+
+	if !errors.Is(err, resolveErr) {
+		t.Errorf(
+			"expected error %v, got %v",
+			resolveErr,
 			err,
 		)
 	}
