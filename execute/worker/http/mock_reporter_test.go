@@ -113,6 +113,18 @@ func (mr *MockexecutionReporterMockRecorder) AddHTTPResponseStatus(status any) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddHTTPResponseStatus", reflect.TypeOf((*MockexecutionReporter)(nil).AddHTTPResponseStatus), status)
 }
 
+// AddHeadersDeviation mocks base method.
+func (m *MockexecutionReporter) AddHeadersDeviation(header string, deviation *model.TestExecutionDeviation) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "AddHeadersDeviation", header, deviation)
+}
+
+// AddHeadersDeviation indicates an expected call of AddHeadersDeviation.
+func (mr *MockexecutionReporterMockRecorder) AddHeadersDeviation(header, deviation any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddHeadersDeviation", reflect.TypeOf((*MockexecutionReporter)(nil).AddHeadersDeviation), header, deviation)
+}
+
 // AddPayloadDeviation mocks base method.
 func (m *MockexecutionReporter) AddPayloadDeviation(deviation *model.PayloadDeviation) {
 	m.ctrl.T.Helper()

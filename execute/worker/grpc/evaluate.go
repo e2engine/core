@@ -116,11 +116,14 @@ func (e *Evaluator) evaluateMetadata(
 		}
 		slices.Sort(expectedStrings)
 
-		e.reporter.AddDeviation(&model.TestExecutionDeviation{
-			Field:    "metadata." + key,
-			Expected: strings.Join(expectedStrings, ","),
-			Actual:   strings.Join(sortedActual, ","),
-		})
+		e.reporter.AddMetadataDeviation(
+			key,
+			&model.TestExecutionDeviation{
+				Field:    "metadata." + key,
+				Expected: strings.Join(expectedStrings, ","),
+				Actual:   strings.Join(sortedActual, ","),
+			},
+		)
 	}
 
 	return nil
