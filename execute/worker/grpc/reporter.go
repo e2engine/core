@@ -7,6 +7,10 @@ import (
 type executionReporter interface {
 	AddDeviation(deviation *model.TestExecutionDeviation)
 	AddPayloadDeviation(deviation *model.PayloadDeviation)
+	AddMetadataDeviation(
+		key string,
+		deviation *model.TestExecutionDeviation,
+	)
 	AddGRPCRequest(req *model.GRPCRequest)
 	AddGRPCResponseStatus(status string)
 	AddGRPCResponseMetadata(metadata map[string][]string)

@@ -9,6 +9,10 @@ import (
 type executionReporter interface {
 	AddDeviation(deviation *model.TestExecutionDeviation)
 	AddPayloadDeviation(deviation *model.PayloadDeviation)
+	AddHeadersDeviation(
+		header string,
+		deviation *model.TestExecutionDeviation,
+	)
 	AddHTTPRequest(req *http.Request)
 	AddHTTPResponseStatus(status int)
 	AddHTTPResponseHeaders(headers http.Header)

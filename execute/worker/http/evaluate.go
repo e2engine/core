@@ -142,11 +142,14 @@ func (e *Evaluator) evaluateHeaders(
 		}
 		slices.Sort(expectedStrings)
 
-		e.reporter.AddDeviation(&model.TestExecutionDeviation{
-			Field:    "headers." + key,
-			Expected: strings.Join(expectedStrings, ","),
-			Actual:   strings.Join(sortedActual, ","),
-		})
+		e.reporter.AddHeadersDeviation(
+			key,
+			&model.TestExecutionDeviation{
+				Field:    "headers." + key,
+				Expected: strings.Join(expectedStrings, ","),
+				Actual:   strings.Join(sortedActual, ","),
+			},
+		)
 	}
 }
 

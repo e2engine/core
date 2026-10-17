@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"go.uber.org/mock/gomock"
@@ -316,8 +317,18 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 				AddGRPCResponseStatus(tt.expectedStatus)
 
 			for i := range tt.expectedDeviations {
-				reporter.EXPECT().
-					AddDeviation(&tt.expectedDeviations[i])
+				deviation := &tt.expectedDeviations[i]
+
+				if strings.HasPrefix(deviation.Field, "metadata.") {
+					reporter.EXPECT().
+						AddMetadataDeviation(
+							strings.TrimPrefix(deviation.Field, "metadata."),
+							deviation,
+						)
+				} else {
+					reporter.EXPECT().
+						AddDeviation(deviation)
+				}
 			}
 
 			expectedMetadata := mergeMetadata(

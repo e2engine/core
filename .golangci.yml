@@ -98,6 +98,10 @@ linters:
         linters:
           - lll
 
+      - path: ^(execute/worker/reporter/config\.go)$
+        linters:
+          - lll
+
       - path: ^execute/runtime/router/(grpc|http)/router\.go$
         linters:
           - funlen

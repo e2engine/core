@@ -471,10 +471,20 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 				AddHTTPResponseHeaders(tt.headers)
 
 			for _, deviation := range tt.deviations {
-				if deviation.payload != nil {
+				switch {
+				case deviation.payload != nil:
 					reporter.EXPECT().
 						AddPayloadDeviation(deviation.payload)
-				} else {
+
+				case deviation.deviation != nil &&
+					strings.HasPrefix(deviation.deviation.Field, "headers."):
+					reporter.EXPECT().
+						AddHeadersDeviation(
+							strings.TrimPrefix(deviation.deviation.Field, "headers."),
+							deviation.deviation,
+						)
+
+				default:
 					reporter.EXPECT().
 						AddDeviation(deviation.deviation)
 				}

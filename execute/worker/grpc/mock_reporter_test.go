@@ -100,6 +100,18 @@ func (mr *MockexecutionReporterMockRecorder) AddGRPCResponseStatus(status any) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddGRPCResponseStatus", reflect.TypeOf((*MockexecutionReporter)(nil).AddGRPCResponseStatus), status)
 }
 
+// AddMetadataDeviation mocks base method.
+func (m *MockexecutionReporter) AddMetadataDeviation(key string, deviation *model.TestExecutionDeviation) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "AddMetadataDeviation", key, deviation)
+}
+
+// AddMetadataDeviation indicates an expected call of AddMetadataDeviation.
+func (mr *MockexecutionReporterMockRecorder) AddMetadataDeviation(key, deviation any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddMetadataDeviation", reflect.TypeOf((*MockexecutionReporter)(nil).AddMetadataDeviation), key, deviation)
+}
+
 // AddPayloadDeviation mocks base method.
 func (m *MockexecutionReporter) AddPayloadDeviation(deviation *model.PayloadDeviation) {
 	m.ctrl.T.Helper()
