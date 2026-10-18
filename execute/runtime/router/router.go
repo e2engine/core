@@ -48,15 +48,24 @@ func (r *Router) Register(route *runtime.Route) {
 	}
 }
 
-type Provider struct{}
+type Config struct {
+	HTTP *httprouter.Config `json:"http" yaml:"http" default:"dive"`
+}
 
-func NewProvider() *Provider {
-	return &Provider{}
+type Provider struct {
+	cfg *Config
+}
+
+func NewProvider(cfg *Config) *Provider {
+	return &Provider{
+		cfg: cfg,
+	}
 }
 
 func (p *Provider) Get(logger log.Logger, calls call.Recorder) runtime.Router {
 	return &Router{
 		http: httprouter.NewRouter(
+			p.cfg.HTTP,
 			logger.With(log.String(keys.Component, "environment_http_router")),
 			calls,
 		),

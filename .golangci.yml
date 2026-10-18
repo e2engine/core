@@ -109,6 +109,7 @@ linters:
       - path: ^execute/runtime/router/(grpc|http)/router\.go$
         linters:
           - funlen
+          - lll
 
       - path: ^execute/runtime/(router/http/router|service/http/(mock|real))\.go$
         text: "G112:"

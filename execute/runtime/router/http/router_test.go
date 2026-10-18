@@ -394,5 +394,10 @@ func newTestHTTPRouter(
 		)
 	}
 
-	return NewRouter(logger, store)
+	routerCfg := &Config{
+		// Use a small buffer size for testing.
+		MaxRecordedBodySize: 1024,
+	}
+
+	return NewRouter(routerCfg, logger, store)
 }

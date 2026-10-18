@@ -19,6 +19,7 @@ import (
 )
 
 type Router struct {
+	cfg    *Config
 	logger log.Logger
 	calls  call.Recorder
 
@@ -26,11 +27,17 @@ type Router struct {
 	mounted  []mountedRoute
 }
 
+type Config struct {
+	MaxRecordedBodySize int64 `json:"max_recorded_body_size" yaml:"max_recorded_body_size" default:"1048576" validate:"min(1),max(67108864)"`
+}
+
 func NewRouter(
+	cfg *Config,
 	logger log.Logger,
 	calls call.Recorder,
 ) *Router {
 	return &Router{
+		cfg:      cfg,
 		logger:   logger,
 		services: make(map[string]*runtime.Route),
 		calls:    calls,
@@ -129,7 +136,7 @@ func (r *Router) Mount(ctx context.Context) error {
 				return
 			}
 
-			responseRecorder := newResponseRecorder(w)
+			responseRecorder := newResponseRecorder(w, r.cfg.MaxRecordedBodySize)
 
 			proxy.ServeHTTP(responseRecorder, req)
 
