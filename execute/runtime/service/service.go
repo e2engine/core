@@ -24,10 +24,6 @@ func NewProvider(
 	logger log.Logger,
 	addressResolver addressResolver,
 ) *Provider {
-	if cfg == nil {
-		cfg = &config.ProviderConfig{}
-	}
-
 	client := http.DefaultClient // TODO: make it configurable.
 
 	descriptorLoader := grpcservice.NewBufDescriptorLoader(
@@ -58,6 +54,7 @@ func (p *Provider) GetService(
 	case spec.Kind == model.ServiceKindHTTP &&
 		spec.Mode == model.ServiceModeMocked:
 		return httpservice.NewMockHTTPService(
+			p.cfg.MockHTTP,
 			p.logger,
 			spec,
 		), nil

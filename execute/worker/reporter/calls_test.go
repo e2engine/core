@@ -26,8 +26,9 @@ func TestSummarizeCalls(t *testing.T) {
 					ServiceID:       "users",
 					HTTP: &call.HTTPCall{
 						Request: call.HTTPRequest{
-							Method: "GET",
-							Path:   "/users",
+							Method:       "GET",
+							Path:         "/users",
+							BodyComplete: true,
 						},
 						Response: call.HTTPResponse{
 							StatusCode: 200,
@@ -39,8 +40,9 @@ func TestSummarizeCalls(t *testing.T) {
 					ServiceID:       "users",
 					HTTP: &call.HTTPCall{
 						Request: call.HTTPRequest{
-							Method: "GET",
-							Path:   "/users",
+							Method:       "GET",
+							Path:         "/users",
+							BodyComplete: true,
 						},
 						Response: call.HTTPResponse{
 							StatusCode: 200,
@@ -68,8 +70,9 @@ func TestSummarizeCalls(t *testing.T) {
 					ServiceID:       "users",
 					HTTP: &call.HTTPCall{
 						Request: call.HTTPRequest{
-							Method: "GET",
-							Path:   "/users",
+							Method:       "GET",
+							Path:         "/users",
+							BodyComplete: true,
 						},
 						Response: call.HTTPResponse{
 							StatusCode: 200,
@@ -81,8 +84,9 @@ func TestSummarizeCalls(t *testing.T) {
 					ServiceID:       "users",
 					HTTP: &call.HTTPCall{
 						Request: call.HTTPRequest{
-							Method: "GET",
-							Path:   "/users",
+							Method:       "GET",
+							Path:         "/users",
+							BodyComplete: true,
 						},
 						Response: call.HTTPResponse{
 							StatusCode: 500,
@@ -119,8 +123,9 @@ func TestSummarizeCalls(t *testing.T) {
 					ServiceID:       "users",
 					HTTP: &call.HTTPCall{
 						Request: call.HTTPRequest{
-							Method: "GET",
-							Path:   "/users",
+							Method:       "GET",
+							Path:         "/users",
+							BodyComplete: true,
 						},
 						Response: call.HTTPResponse{
 							StatusCode: 200,
@@ -132,8 +137,9 @@ func TestSummarizeCalls(t *testing.T) {
 					ServiceID:       "users",
 					HTTP: &call.HTTPCall{
 						Request: call.HTTPRequest{
-							Method: "POST",
-							Path:   "/users",
+							Method:       "POST",
+							Path:         "/users",
+							BodyComplete: true,
 						},
 						Response: call.HTTPResponse{
 							StatusCode: 200,
@@ -145,8 +151,9 @@ func TestSummarizeCalls(t *testing.T) {
 					ServiceID:       "users",
 					HTTP: &call.HTTPCall{
 						Request: call.HTTPRequest{
-							Method: "GET",
-							Path:   "/health",
+							Method:       "GET",
+							Path:         "/health",
+							BodyComplete: true,
 						},
 						Response: call.HTTPResponse{
 							StatusCode: 200,
@@ -358,8 +365,9 @@ func TestSummarizeCalls(t *testing.T) {
 					ServiceID:       "service-b",
 					HTTP: &call.HTTPCall{
 						Request: call.HTTPRequest{
-							Method: "GET",
-							Path:   "/health",
+							Method:       "GET",
+							Path:         "/health",
+							BodyComplete: true,
 						},
 						Response: call.HTTPResponse{
 							StatusCode: 200,
@@ -371,8 +379,9 @@ func TestSummarizeCalls(t *testing.T) {
 					ServiceID:       "service-a",
 					HTTP: &call.HTTPCall{
 						Request: call.HTTPRequest{
-							Method: "GET",
-							Path:   "/health",
+							Method:       "GET",
+							Path:         "/health",
+							BodyComplete: true,
 						},
 						Response: call.HTTPResponse{
 							StatusCode: 200,
@@ -422,8 +431,9 @@ func TestSummarizeCalls(t *testing.T) {
 					ServiceID:       "service-1",
 					HTTP: &call.HTTPCall{
 						Request: call.HTTPRequest{
-							Method: "GET",
-							Path:   "/health",
+							Method:       "GET",
+							Path:         "/health",
+							BodyComplete: true,
 						},
 						Response: call.HTTPResponse{
 							StatusCode: 200,
@@ -460,8 +470,9 @@ func TestSummarizeCalls(t *testing.T) {
 					ServiceID:       "users",
 					HTTP: &call.HTTPCall{
 						Request: call.HTTPRequest{
-							Method: "GET",
-							Path:   "/users",
+							Method:       "GET",
+							Path:         "/users",
+							BodyComplete: true,
 						},
 						Response: call.HTTPResponse{
 							StatusCode: 200,
@@ -504,8 +515,9 @@ func TestSummarizeCallsDoesNotExposeCapturedData(
 		ServiceID:       "service-1",
 		HTTP: &call.HTTPCall{
 			Request: call.HTTPRequest{
-				Method: "POST",
-				Path:   "/events",
+				Method:       "POST",
+				Path:         "/events",
+				BodyComplete: true,
 				Query: map[string][]string{
 					"token": {"secret-query"},
 				},

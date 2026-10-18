@@ -9,6 +9,7 @@ import (
 
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/model"
+	errorsPkg "github.com/e2engine/core/pkg/errors"
 )
 
 func TestEvaluatorEvaluateCalls(t *testing.T) {
@@ -639,6 +640,70 @@ func TestEvaluatorMatchesError(t *testing.T) {
 			"expected error %v, got %v",
 			expectedErr,
 			err,
+		)
+	}
+}
+
+func TestEvaluatorEvaluateCallsTruncatedHTTPBody(t *testing.T) {
+	expectedErr := errorsPkg.ErrHTTPRecordedRequestBodyTruncated
+
+	ctrl := gomock.NewController(t)
+	reporter := NewMockdeviationReporter(ctrl)
+
+	httpEvaluator := &testCallEvaluator{
+		matchesErr: expectedErr,
+	}
+
+	evaluator := New(
+		httpEvaluator,
+		&testCallEvaluator{},
+		reporter,
+	)
+
+	calls := &call.Store{}
+
+	calls.Record(call.Call{
+		TestExecutionID: "execution-1",
+		ServiceID:       "http-service",
+		HTTP: &call.HTTPCall{
+			Request: call.HTTPRequest{
+				Method:        "POST",
+				Body:          []byte("partial"),
+				BodyTruncated: true,
+				BodyComplete:  true,
+			},
+		},
+	})
+
+	err := evaluator.EvaluateCalls(
+		context.Background(),
+		[]model.ServiceSpec{
+			{
+				ID:   "http-service",
+				Kind: model.ServiceKindHTTP,
+			},
+		},
+		[]model.ServiceExpectedCalls{
+			{
+				ServiceID: "http-service",
+				HTTP:      &model.HTTPRequestPattern{},
+			},
+		},
+		calls,
+		"execution-1",
+	)
+
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf(
+			"expected ErrHTTPRecordedRequestBodyTruncated, got %v",
+			err,
+		)
+	}
+
+	if httpEvaluator.matchesCalls != 1 {
+		t.Errorf(
+			"expected Matches() to be called once, got %d",
+			httpEvaluator.matchesCalls,
 		)
 	}
 }

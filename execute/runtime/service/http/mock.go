@@ -21,6 +21,7 @@ import (
 )
 
 type MockHTTPService struct {
+	cfg    *MockHTTPServiceConfig
 	logger log.Logger
 
 	spec     *model.ServiceSpec
@@ -30,9 +31,14 @@ type MockHTTPService struct {
 	runtimeAddress string
 }
 
-func NewMockHTTPService(logger log.Logger, spec *model.ServiceSpec) *MockHTTPService {
+func NewMockHTTPService(
+	cfg *MockHTTPServiceConfig,
+	logger log.Logger,
+	spec *model.ServiceSpec,
+) *MockHTTPService {
 	// The spec has already been validated higher up the stack, so we can assume it's valid here.
 	return &MockHTTPService{
+		cfg: cfg,
 		logger: logger.With(
 			log.String(keys.EnvironmentServiceID, spec.ID),
 			log.String(keys.EnvironmentServiceKind, string(spec.Kind)),
@@ -99,6 +105,14 @@ func (s *MockHTTPService) ServeHTTP(
 ) {
 	fixture, err := s.match(r)
 	if err != nil {
+		if nativeerrors.Is(err, errors.ErrHTTPRequestBodyTooLarge) {
+			http.Error(
+				w,
+				http.StatusText(http.StatusRequestEntityTooLarge),
+				http.StatusRequestEntityTooLarge,
+			)
+			return
+		}
 		http.Error(
 			w,
 			err.Error(),
@@ -130,7 +144,12 @@ func (s *MockHTTPService) ServeHTTP(
 func (s *MockHTTPService) match(
 	r *http.Request,
 ) (*Fixture, error) {
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(
+		io.LimitReader(r.Body, s.cfg.MaxRequestBodySize+1),
+	)
+	if err == nil && int64(len(body)) > s.cfg.MaxRequestBodySize {
+		return nil, errors.ErrHTTPRequestBodyTooLarge
+	}
 	if err != nil {
 		s.logger.Error(
 			errors.ErrFailedToReadRequestBody.Error(),

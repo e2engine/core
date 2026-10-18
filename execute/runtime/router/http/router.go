@@ -9,11 +9,9 @@ import (
 	"net/url"
 
 	e2enginehttp "github.com/e2engine/instrumentation-go/http"
-	"github.com/ygrebnov/errorc"
 
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/execute/runtime"
-	"github.com/e2engine/core/pkg/errors"
 	"github.com/e2engine/core/pkg/keys"
 	"github.com/e2engine/core/pkg/log"
 )
@@ -109,43 +107,17 @@ func (r *Router) Mount(ctx context.Context) error {
 				log.String(keys.RequestURLPath, req.URL.Path),
 			)
 
-			request, errCapture := captureRequest(req)
-			if errCapture != nil {
-				captureErr := errorc.With(
-					errors.ErrFailedToCaptureEnvironmentServiceCall,
-					errorc.String(keys.EnvironmentServiceID, route.ServiceID),
-					errorc.String(keys.RequestMethod, req.Method),
-					errorc.String(keys.RequestURLPath, req.URL.Path),
-					errorc.Error(keys.Cause, errCapture),
-				)
+			request := newRequestCapturer(req, r.cfg.MaxRecordedBodySize)
+			response := newResponseRecorder(w, r.cfg.MaxRecordedBodySize)
 
-				r.logger.Error(
-					errors.ErrFailedToCaptureEnvironmentServiceCall.Error(),
-					log.String(keys.EnvironmentServiceID, route.ServiceID),
-					log.String(keys.RequestMethod, req.Method),
-					log.String(keys.RequestURLPath, req.URL.Path),
-					log.Err(keys.Cause, captureErr),
-				)
-
-				http.Error(
-					w,
-					http.StatusText(http.StatusInternalServerError),
-					http.StatusInternalServerError,
-				)
-
-				return
-			}
-
-			responseRecorder := newResponseRecorder(w, r.cfg.MaxRecordedBodySize)
-
-			proxy.ServeHTTP(responseRecorder, req)
+			proxy.ServeHTTP(response, req)
 
 			r.calls.Record(call.Call{
 				TestExecutionID: e2enginehttp.TestExecutionID(req.Header),
 				ServiceID:       route.ServiceID,
 				HTTP: &call.HTTPCall{
-					Request:  request,
-					Response: responseRecorder.GetResponse(),
+					Request:  request.GetRequest(),
+					Response: response.GetResponse(),
 				},
 			})
 		})

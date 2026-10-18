@@ -23,9 +23,6 @@ func TestNewProvider(t *testing.T) {
 		cfg  *config.ProviderConfig
 	}{
 		{
-			name: "nil config",
-		},
-		{
 			name: "config",
 			cfg: &config.ProviderConfig{
 				BufDescriptorLoaderToken: "token",
@@ -92,7 +89,14 @@ func TestProvider_GetService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Unexpected NewSilentLogger error: %q", err)
 	}
-	provider := NewProvider(nil, logger, nil)
+
+	cfg := &config.ProviderConfig{
+		MockHTTP: &httpservice.MockHTTPServiceConfig{
+			MaxRequestBodySize: 1048576,
+		},
+	}
+
+	provider := NewProvider(cfg, logger, nil)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -140,7 +144,13 @@ func TestProvider_GetService_InvalidConfiguration(t *testing.T) {
 		},
 	}
 
-	provider := NewProvider(nil, nil, nil)
+	cfg := &config.ProviderConfig{
+		MockHTTP: &httpservice.MockHTTPServiceConfig{
+			MaxRequestBodySize: 1048576,
+		},
+	}
+
+	provider := NewProvider(cfg, nil, nil)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -186,16 +196,22 @@ func TestProvider_GetService_AddressResolver(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
 
-	addressResolver := NewMockaddressResolver(ctrl)
+	resolver := NewMockaddressResolver(ctrl)
 
-	addressResolver.EXPECT().
+	resolver.EXPECT().
 		ResolveHTTPURL("http://gateway-host:9000").
 		Return(upstream.URL, nil)
 
+	cfg := &config.ProviderConfig{
+		MockHTTP: &httpservice.MockHTTPServiceConfig{
+			MaxRequestBodySize: 1048576,
+		},
+	}
+
 	provider := NewProvider(
-		nil,
+		cfg,
 		logger,
-		addressResolver,
+		resolver,
 	)
 
 	created, err := provider.GetService(&model.ServiceSpec{

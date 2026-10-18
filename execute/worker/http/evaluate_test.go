@@ -566,9 +566,10 @@ func TestEvaluatorMatches(t *testing.T) {
 		ServiceID: "service-1",
 		HTTP: &call.HTTPCall{
 			Request: call.HTTPRequest{
-				Method: "POST",
-				Path:   "/users",
-				Body:   []byte(`{"name":"Yaroslav"}`),
+				Method:       "POST",
+				Path:         "/users",
+				Body:         []byte(`{"name":"Yaroslav"}`),
+				BodyComplete: true,
 			},
 		},
 	}
@@ -682,7 +683,8 @@ func TestHTTPCallMatchesExpectation(t *testing.T) {
 			"X-Test":       {"one", "two"},
 			"X-Empty":      {""},
 		},
-		Body: []byte(`{"name":"Yaroslav","active":true}`),
+		Body:         []byte(`{"name":"Yaroslav","active":true}`),
+		BodyComplete: true,
 	}
 
 	tests := []struct {
@@ -953,10 +955,16 @@ func TestHTTPCallMatchesExpectation(t *testing.T) {
 				request.Body = tt.body
 			}
 
-			matched := httpCallMatchesExpectation(
-				request,
+			matched, err := httpCallMatchesExpectation(
+				&request,
 				&tt.expected,
 			)
+			if err != nil {
+				t.Fatalf(
+					"httpCallMatchesExpectation() error = %v",
+					err,
+				)
+			}
 
 			if matched != tt.match {
 				t.Errorf(
@@ -1001,8 +1009,9 @@ func TestEvaluatorDeviation(t *testing.T) {
 				ServiceID: "service-1",
 				HTTP: &call.HTTPCall{
 					Request: call.HTTPRequest{
-						Method: "GET",
-						Path:   "/users",
+						Method:       "GET",
+						Path:         "/users",
+						BodyComplete: true,
 					},
 					Response: call.HTTPResponse{
 						Headers: nethttp.Header{},
@@ -1016,8 +1025,9 @@ func TestEvaluatorDeviation(t *testing.T) {
 				ServiceID: "service-1",
 				HTTP: &call.HTTPCall{
 					Request: call.HTTPRequest{
-						Method: "POST",
-						Path:   "/users",
+						Method:       "POST",
+						Path:         "/users",
+						BodyComplete: true,
 					},
 					Response: call.HTTPResponse{
 						Headers: func() nethttp.Header {
@@ -1174,6 +1184,90 @@ func TestEvaluatorEvaluateResponseBodySizeLimitReadError(t *testing.T) {
 
 	if !errors.Is(err, expectedErr) {
 		t.Fatalf("expected read error, got %v", err)
+	}
+}
+
+func TestHTTPCallMatchesExpectationTruncatedBody(t *testing.T) {
+	tests := []struct {
+		name      string
+		expected  model.HTTPRequestPattern
+		wantMatch bool
+		wantErr   bool
+	}{
+		{
+			name: "no body expectation",
+			expected: model.HTTPRequestPattern{
+				Method: "POST",
+			},
+			wantMatch: true,
+		},
+		{
+			name: "body expectation",
+			expected: model.HTTPRequestPattern{
+				Body: stringMatcher("hello world"),
+			},
+			wantErr: true,
+		},
+		{
+			name: "JSON body expectation",
+			expected: model.HTTPRequestPattern{
+				BodyJSON: stringMatcher(`{"message":"hello world"}`),
+			},
+			wantErr: true,
+		},
+		{
+			name: "method mismatch before body check",
+			expected: model.HTTPRequestPattern{
+				Method: "GET",
+				Body:   stringMatcher("hello world"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := call.HTTPRequest{
+				Method:        "POST",
+				Body:          []byte("hello"),
+				BodyTruncated: true,
+				BodyComplete:  true,
+			}
+
+			matched, err := httpCallMatchesExpectation(
+				&actual,
+				&tt.expected,
+			)
+
+			if tt.wantErr {
+				if !errors.Is(
+					err,
+					errorsPkg.ErrHTTPRecordedRequestBodyTruncated,
+				) {
+					t.Fatalf(
+						"expected ErrHTTPRecordedRequestBodyTruncated, got %v",
+						err,
+					)
+				}
+
+				if matched {
+					t.Error("truncated body unexpectedly matched")
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if matched != tt.wantMatch {
+				t.Errorf(
+					"matched = %v, want %v",
+					matched,
+					tt.wantMatch,
+				)
+			}
+		})
 	}
 }
 
