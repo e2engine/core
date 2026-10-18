@@ -8,15 +8,21 @@ import (
 )
 
 type ResponseRecorder struct {
-	w          http.ResponseWriter
-	statusCode int
-	header     http.Header
-	body       []byte
+	w             http.ResponseWriter
+	statusCode    int
+	header        http.Header
+	body          []byte
+	maxBodySize   int64
+	bodyTruncated bool
 }
 
-func newResponseRecorder(w http.ResponseWriter) *ResponseRecorder {
+func newResponseRecorder(
+	w http.ResponseWriter,
+	maxBodySize int64,
+) *ResponseRecorder {
 	return &ResponseRecorder{
-		w: w,
+		w:           w,
+		maxBodySize: maxBodySize,
 	}
 }
 
@@ -43,7 +49,18 @@ func (r *ResponseRecorder) Write(p []byte) (int, error) {
 	n, err := r.w.Write(p)
 
 	if n > 0 {
-		r.body = append(r.body, p[:n]...)
+		remaining := r.maxBodySize - int64(len(r.body))
+
+		if remaining > 0 {
+			captureSize := min(n, int(remaining))
+			r.body = append(r.body, p[:captureSize]...)
+
+			if captureSize < n {
+				r.bodyTruncated = true
+			}
+		} else {
+			r.bodyTruncated = true
+		}
 	}
 
 	return n, err
@@ -59,9 +76,10 @@ func (r *ResponseRecorder) GetResponse() call.HTTPResponse {
 	}
 
 	return call.HTTPResponse{
-		StatusCode: statusCode,
-		Headers:    util.CloneHTTPHeader(headers),
-		Body:       util.CloneBytes(r.body),
+		StatusCode:    statusCode,
+		Headers:       util.CloneHTTPHeader(headers),
+		Body:          util.CloneBytes(r.body),
+		BodyTruncated: r.bodyTruncated,
 	}
 }
 
