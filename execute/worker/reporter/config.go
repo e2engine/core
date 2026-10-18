@@ -13,4 +13,10 @@ type Config struct {
 	RedactHeaders []string `json:"redact_headers" yaml:"redact_headers" env:"REDACT_HEADERS"`
 	// RedactMetadata contains additional sensitive metadata to redact.
 	RedactMetadata []string `json:"redact_metadata" yaml:"redact_metadata" env:"REDACT_METADATA"`
+
+	// SkipRedactingQueryParams disables redaction of builtin and
+	// additional request query parameters in the test execution report.
+	SkipRedactingQueryParams bool `json:"skip_redacting_query_params" yaml:"skip_redacting_query_params" env:"SKIP_REDACTING_QUERY_PARAMS"`
+	// RedactQueryParams contains additional sensitive request query parameters to redact.
+	RedactQueryParams []string `json:"redact_query_params" yaml:"redact_query_params" env:"REDACT_QUERY_PARAMS"`
 }

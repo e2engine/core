@@ -267,6 +267,139 @@ func TestReporterAddHeadersDeviationNil(t *testing.T) {
 	}
 }
 
+func TestReporterAddHTTPRequestQueryRedaction(t *testing.T) {
+	tests := []struct {
+		name      string
+		cfg       Config
+		wantQuery url.Values
+	}{
+		{
+			name: "default sensitive query parameters",
+			wantQuery: url.Values{
+				"access_token": {redacted},
+				"API_KEY":      {redacted, redacted},
+				"page":         {"2"},
+				"private":      {"custom-secret"},
+			},
+		},
+		{
+			name: "custom sensitive query parameter",
+			cfg: Config{
+				RedactQueryParams: []string{" PRIVATE "},
+			},
+			wantQuery: url.Values{
+				"access_token": {redacted},
+				"API_KEY":      {redacted, redacted},
+				"page":         {"2"},
+				"private":      {redacted},
+			},
+		},
+		{
+			name: "redaction explicitly disabled",
+			cfg: Config{
+				RedactQueryParams:        []string{"private"},
+				SkipRedactingQueryParams: true,
+			},
+			wantQuery: url.Values{
+				"access_token": {"access-secret"},
+				"API_KEY":      {"key-one", "key-two"},
+				"page":         {"2"},
+				"private":      {"custom-secret"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newReporterForTest(
+				&tt.cfg,
+				&model.TestSpec{
+					Request: model.RequestSpec{
+						HTTP: &model.HTTPRequest{},
+					},
+				},
+			)
+
+			req, err := http.NewRequest(
+				http.MethodGet,
+				"http://example.com/resource?access_token=access-secret&API_KEY=key-one&API_KEY=key-two&page=2&private=custom-secret",
+				nil,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			originalURL := req.URL.String()
+
+			r.AddHTTPRequest(req)
+
+			// Reporting must not modify the outgoing request.
+			if got := req.URL.String(); got != originalURL {
+				t.Errorf(
+					"request URL modified: got %q, want %q",
+					got,
+					originalURL,
+				)
+			}
+
+			reportedURL, err := url.Parse(
+				r.Result().Summary.Request.HTTP.URL,
+			)
+			if err != nil {
+				t.Fatalf("invalid reported URL: %v", err)
+			}
+
+			// Redaction must preserve the URL destination and path.
+			if reportedURL.Scheme != "http" ||
+				reportedURL.Host != "example.com" ||
+				reportedURL.Path != "/resource" {
+				t.Errorf(
+					"unexpected reported URL: %q",
+					reportedURL.String(),
+				)
+			}
+
+			if got := reportedURL.Query(); !reflect.DeepEqual(got, tt.wantQuery) {
+				t.Errorf(
+					"reported query: got %#v, want %#v",
+					got,
+					tt.wantQuery,
+				)
+			}
+		})
+	}
+}
+
+func TestReporterAddHTTPRequestURLWithoutQuery(t *testing.T) {
+	r := newReporterForTest(
+		&Config{},
+		&model.TestSpec{
+			Request: model.RequestSpec{
+				HTTP: &model.HTTPRequest{},
+			},
+		},
+	)
+
+	req, err := http.NewRequest(
+		http.MethodGet,
+		"http://example.com/resource",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r.AddHTTPRequest(req)
+
+	if got := r.Result().Summary.Request.HTTP.URL; got != req.URL.String() {
+		t.Errorf(
+			"reported URL: got %q, want %q",
+			got,
+			req.URL.String(),
+		)
+	}
+}
+
 func TestReporterAddHTTPResponseStatus(t *testing.T) {
 	r := newReporterForTest(
 		&Config{},

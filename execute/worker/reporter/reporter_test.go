@@ -324,6 +324,29 @@ func TestReporterAddPayloadDeviation(t *testing.T) {
 	}
 }
 
+func TestNewNilConfig(t *testing.T) {
+	r := newReporterForTest(
+		nil,
+		&model.TestSpec{},
+	)
+
+	if r.cfg == nil {
+		t.Fatal("expected initialized configuration")
+	}
+
+	if r.cfg.DumpPayload {
+		t.Error("expected payload dumping disabled by default")
+	}
+
+	if r.cfg.SkipRedactingHeadersMetadata {
+		t.Error("expected header and metadata redaction enabled")
+	}
+
+	if r.cfg.SkipRedactingQueryParams {
+		t.Error("expected query parameter redaction enabled")
+	}
+}
+
 func newReporterForTest(
 	cfg *Config,
 	spec *model.TestSpec,
