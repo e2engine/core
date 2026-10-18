@@ -61,12 +61,8 @@ func (w *Worker) Execute(
 	)
 	defer cancel()
 
-	reporterCfg := w.cfg.Reporter
-	if reporterCfg == nil {
-		reporterCfg = &reporterPkg.Config{}
-	}
 	reporter := reporterPkg.New(
-		reporterCfg,
+		w.cfg.Reporter,
 		&job.Test.Spec,
 		job.ExecutionID,
 		job.TestSuiteExecutionID,

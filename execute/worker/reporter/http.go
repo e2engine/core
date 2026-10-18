@@ -3,6 +3,7 @@ package reporter
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/e2engine/core/internal/util"
@@ -25,7 +26,7 @@ func (r *Reporter) AddHTTPRequest(req *http.Request) {
 
 	request := &model.HTTPRequest{
 		Method:  req.Method,
-		URL:     req.URL.String(),
+		URL:     r.redactURL(req.URL),
 		Headers: r.redactHeaders(req.Header),
 	}
 
@@ -163,4 +164,36 @@ func (r *Reporter) redactHeaders(headers http.Header) http.Header {
 	}
 
 	return out
+}
+
+func (r *Reporter) redactURL(u *url.URL) string {
+	if u == nil {
+		return ""
+	}
+
+	if r.cfg.SkipRedactingQueryParams {
+		return u.String()
+	}
+
+	redactedURL := *u
+
+	query := redactedURL.Query()
+	changed := false
+
+	for key, values := range query {
+		if _, ok := r.redactedQueryParams[strings.ToLower(key)]; ok {
+			for i := range values {
+				values[i] = redacted
+			}
+			changed = true
+		}
+	}
+
+	if !changed {
+		return u.String()
+	}
+
+	redactedURL.RawQuery = query.Encode()
+
+	return redactedURL.String()
 }

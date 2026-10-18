@@ -10,11 +10,12 @@ import (
 )
 
 type Reporter struct {
-	cfg              *Config
-	testSpec         *model.TestSpec
-	report           *execute.TestExecutionResult
-	redactedHeaders  map[string]struct{}
-	redactedMetadata map[string]struct{}
+	cfg                 *Config
+	testSpec            *model.TestSpec
+	report              *execute.TestExecutionResult
+	redactedHeaders     map[string]struct{}
+	redactedMetadata    map[string]struct{}
+	redactedQueryParams map[string]struct{}
 }
 
 func New(
@@ -22,6 +23,11 @@ func New(
 	testSpec *model.TestSpec,
 	executionID, testSuiteExecutionID string,
 ) *Reporter {
+	if cfg == nil {
+		// because there are no defaults in config
+		cfg = &Config{}
+	}
+
 	const (
 		authorization      = "authorization"
 		proxyAuthorization = "proxy-authorization"
@@ -51,6 +57,20 @@ func New(
 		redactedMetadata[strings.ToLower(strings.TrimSpace(m))] = struct{}{}
 	}
 
+	redactedQueryParams := map[string]struct{}{
+		"access_token":  {},
+		"refresh_token": {},
+		"id_token":      {},
+		"token":         {},
+		"api_key":       {},
+		"apikey":        {},
+		"password":      {},
+		"client_secret": {},
+	}
+	for _, q := range cfg.RedactQueryParams {
+		redactedQueryParams[strings.ToLower(strings.TrimSpace(q))] = struct{}{}
+	}
+
 	return &Reporter{
 		cfg:      cfg,
 		testSpec: testSpec,
@@ -59,8 +79,9 @@ func New(
 			TestSuiteExecutionID: testSuiteExecutionID,
 			Summary:              &model.TestExecutionSummary{},
 		},
-		redactedHeaders:  redactedHeaders,
-		redactedMetadata: redactedMetadata,
+		redactedHeaders:     redactedHeaders,
+		redactedMetadata:    redactedMetadata,
+		redactedQueryParams: redactedQueryParams,
 	}
 }
 
