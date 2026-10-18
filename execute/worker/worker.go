@@ -29,8 +29,9 @@ type Worker struct {
 }
 
 type Config struct {
-	TestTimeout time.Duration       `json:"test_timeout" yaml:"test_timeout" default:"30s" validate:"min(1s)"`
-	Reporter    *reporterPkg.Config `json:"reporter" yaml:"reporter" validateElem:"omitempty"`
+	TestTimeout   time.Duration               `json:"test_timeout" yaml:"test_timeout" default:"30s" validate:"min(1s)"`
+	HTTPEvaluator *httpworker.EvaluatorConfig `json:"http_evaluator" yaml:"http_evaluator" default:"dive"`
+	Reporter      *reporterPkg.Config         `json:"reporter" yaml:"reporter"`
 }
 
 func NewWorker(
@@ -76,7 +77,10 @@ func (w *Worker) Execute(
 		return reporter.Result(), nil
 	}
 
-	httpEvaluator := httpworker.NewEvaluator(reporter)
+	httpEvaluator := httpworker.NewEvaluator(
+		w.cfg.HTTPEvaluator,
+		reporter,
+	)
 
 	grpcEvaluator := grpcworker.NewEvaluator(
 		w.grpcMethodResolver,

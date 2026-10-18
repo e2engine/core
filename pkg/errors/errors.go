@@ -61,9 +61,10 @@ var (
 
 	ErrInvalidGRPCMessageMatcher = errorc.New("invalid gRPC message matcher")
 
-	ErrInvalidHTTPURL         = errorc.New("invalid HTTP URL")
-	ErrInvalidHostnameMapping = errorc.New("invalid hostname mapping")
-	ErrInvalidGRPCTarget      = errorc.New("invalid gRPC target")
+	ErrInvalidHTTPURL           = errorc.New("invalid HTTP URL")
+	ErrInvalidHostnameMapping   = errorc.New("invalid hostname mapping")
+	ErrInvalidGRPCTarget        = errorc.New("invalid gRPC target")
+	ErrHTTPResponseBodyTooLarge = errorc.New("HTTP response body too large")
 )
 
 // Is wraps native errors package Is.

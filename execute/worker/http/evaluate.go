@@ -15,19 +15,27 @@ import (
 	"github.com/e2engine/core/internal/util"
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/model/matcher"
+	"github.com/e2engine/core/pkg/errors"
 	"github.com/e2engine/core/pkg/keys"
 )
 
 var _ evaluator.CallEvaluator = (*Evaluator)(nil)
 
 type Evaluator struct {
+	cfg      *EvaluatorConfig
 	reporter executionReporter
 }
 
+type EvaluatorConfig struct {
+	MaxResponseBodySize int64 `json:"max_response_body_size" yaml:"max_response_body_size" default:"1048576" validate:"min(1),max(67108864)"`
+}
+
 func NewEvaluator(
+	cfg *EvaluatorConfig,
 	reporter executionReporter,
 ) *Evaluator {
 	return &Evaluator{
+		cfg:      cfg,
 		reporter: reporter,
 	}
 }
@@ -40,9 +48,15 @@ func (e *Evaluator) EvaluateResponse(
 
 	e.evaluateHeaders(expect.Headers, resp.Header)
 
-	actualBody, err := io.ReadAll(resp.Body)
+	actualBody, err := io.ReadAll(
+		io.LimitReader(resp.Body, e.cfg.MaxResponseBodySize+1),
+	)
 	if err != nil {
 		return err
+	}
+
+	if int64(len(actualBody)) > e.cfg.MaxResponseBodySize {
+		return errors.ErrHTTPResponseBodyTooLarge
 	}
 
 	if expect.Body == nil && expect.BodyJSON == nil {
