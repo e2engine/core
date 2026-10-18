@@ -201,6 +201,10 @@ func TestRouter(t *testing.T) {
 		)
 	}
 
+	if got.HTTP.Request.BodyTruncated {
+		t.Error("expected recorded request body not to be truncated")
+	}
+
 	if got.HTTP.Response.StatusCode != http.StatusCreated {
 		t.Errorf(
 			"expected recorded status %d, got %d",
@@ -221,6 +225,10 @@ func TestRouter(t *testing.T) {
 			"expected recorded response body response, got %q",
 			string(got.HTTP.Response.Body),
 		)
+	}
+
+	if got.HTTP.Response.BodyTruncated {
+		t.Error("expected recorded response body not to be truncated")
 	}
 }
 
@@ -377,6 +385,137 @@ func TestRouterMultipleRoutes(t *testing.T) {
 
 	if router.mounted != nil {
 		t.Fatal("expected mounted routes to be cleared")
+	}
+}
+
+func TestRouterTruncatedBodyRecording(t *testing.T) {
+	const (
+		requestBody  = "123456789"
+		responseBody = "abcdefghi"
+	)
+
+	upstream := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, req *http.Request) {
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				t.Errorf("ReadAll(upstream request) error = %v", err)
+				return
+			}
+
+			if string(body) != requestBody {
+				t.Errorf(
+					"upstream request body = %q, want %q",
+					body,
+					requestBody,
+				)
+			}
+
+			if _, err := io.WriteString(w, responseBody); err != nil {
+				t.Errorf("Write(upstream response) error = %v", err)
+			}
+		},
+	))
+	defer upstream.Close()
+
+	store := &call.Store{}
+	router := newTestHTTPRouter(t, store)
+	router.cfg.MaxRecordedBodySize = 5
+
+	router.Register(&runtime.Route{
+		ServiceID:      "service-1",
+		ListenAddress:  "127.0.0.1:0",
+		RuntimeAddress: upstream.Listener.Addr().String(),
+	})
+
+	if err := router.Mount(t.Context()); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+
+	defer func() {
+		if err := router.Unmount(context.Background()); err != nil {
+			t.Errorf("Unmount() error = %v", err)
+		}
+	}()
+
+	address := router.mounted[0].listener.Addr().String()
+
+	req, err := http.NewRequestWithContext(
+		t.Context(),
+		http.MethodPost,
+		"http://"+address+"/test",
+		strings.NewReader(requestBody),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header = e2enginehttp.WithTestExecutionID(
+		req.Header,
+		"execution-1",
+	)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify that the complete response was forwarded.
+	if string(body) != responseBody {
+		t.Errorf(
+			"forwarded response body = %q, want %q",
+			body,
+			responseBody,
+		)
+	}
+
+	calls := store.Get(call.Filter{
+		TestExecutionID: "execution-1",
+		ServiceID:       "service-1",
+	})
+
+	if len(calls) != 1 {
+		t.Fatalf(
+			"recorded calls = %d, want 1",
+			len(calls),
+		)
+	}
+
+	if calls[0].HTTP == nil {
+		t.Fatal("expected recorded HTTP call")
+	}
+
+	got := calls[0].HTTP
+
+	// Only the first five request bytes should be recorded.
+	if string(got.Request.Body) != requestBody[:5] {
+		t.Errorf(
+			"recorded request body = %q, want %q",
+			got.Request.Body,
+			requestBody[:5],
+		)
+	}
+
+	if !got.Request.BodyTruncated {
+		t.Error("expected recorded request body to be truncated")
+	}
+
+	// Only the first five response bytes should be recorded.
+	if string(got.Response.Body) != responseBody[:5] {
+		t.Errorf(
+			"recorded response body = %q, want %q",
+			got.Response.Body,
+			responseBody[:5],
+		)
+	}
+
+	if !got.Response.BodyTruncated {
+		t.Error("expected recorded response body to be truncated")
 	}
 }
 

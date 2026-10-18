@@ -10,11 +10,13 @@ type HTTPCall struct {
 }
 
 type HTTPRequest struct {
-	Method  string
-	Path    string
-	Query   map[string][]string
-	Headers http.Header
-	Body    []byte
+	Method        string
+	Path          string
+	Query         map[string][]string
+	Headers       http.Header
+	Body          []byte
+	BodyTruncated bool
+	BodyComplete  bool
 }
 
 type HTTPResponse struct {

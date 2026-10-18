@@ -182,27 +182,27 @@ func (e *Evaluator) Matches(
 	}
 
 	return httpCallMatchesExpectation(
-		actual.HTTP.Request,
+		&actual.HTTP.Request,
 		expected.HTTP,
-	), nil
+	)
 }
 
 func httpCallMatchesExpectation(
-	actual call.HTTPRequest,
+	actual *call.HTTPRequest,
 	expected *model.HTTPRequestPattern,
-) bool {
+) (bool, error) {
 	if expected.Method != "" && actual.Method != expected.Method {
-		return false
+		return false, nil
 	}
 
 	if expected.Path != "" && actual.Path != expected.Path {
-		return false
+		return false, nil
 	}
 
 	for key, expectedValues := range expected.Query {
 		actualValues, ok := actual.Query[key]
 		if !ok || !util.IsStringSlicesEqual(actualValues, expectedValues) {
-			return false
+			return false, nil
 		}
 	}
 
@@ -215,12 +215,23 @@ func httpCallMatchesExpectation(
 			exists,
 			expectedValues,
 		) {
-			return false
+			return false, nil
 		}
 	}
 
-	if expected.Body != nil && !match.IsStringMatched(actual.Body, expected.Body) {
-		return false
+	if expected.Body != nil || expected.BodyJSON != nil {
+		if actual.BodyTruncated {
+			return false, errors.ErrHTTPRecordedRequestBodyTruncated
+		}
+
+		if !actual.BodyComplete {
+			return false, errors.ErrHTTPRecordedRequestBodyIncomplete
+		}
+	}
+
+	if expected.Body != nil &&
+		!match.IsStringMatched(actual.Body, expected.Body) {
+		return false, nil
 	}
 
 	if expected.BodyJSON != nil {
@@ -229,11 +240,11 @@ func httpCallMatchesExpectation(
 			expected.BodyJSON,
 		)
 		if err != nil || !matched {
-			return false
+			return false, nil
 		}
 	}
 
-	return true
+	return true, nil
 }
 
 func (e *Evaluator) Deviation(

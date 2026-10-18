@@ -2,6 +2,8 @@ package config
 
 import (
 	"time"
+
+	httpservice "github.com/e2engine/core/execute/runtime/service/http"
 )
 
 type Config struct {
@@ -14,5 +16,6 @@ type Config struct {
 }
 
 type ProviderConfig struct {
-	BufDescriptorLoaderToken string `json:"buf_descriptor_loader_token,omitempty" yaml:"buf_descriptor_loader_token,omitempty" env:"BUF_DESCRIPTOR_LOADER_TOKEN"` // TODO: add validation.
+	MockHTTP                 *httpservice.MockHTTPServiceConfig `json:"mock_http" yaml:"mock_http" default:"dive"`
+	BufDescriptorLoaderToken string                             `json:"buf_descriptor_loader_token,omitempty" yaml:"buf_descriptor_loader_token,omitempty" env:"BUF_DESCRIPTOR_LOADER_TOKEN"` // TODO: add validation.
 }

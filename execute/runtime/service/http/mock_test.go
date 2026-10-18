@@ -2,8 +2,10 @@ package http_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -921,21 +923,188 @@ func TestMockHTTPServiceResponse(t *testing.T) {
 	}
 }
 
+func TestMockHTTPServiceRequestBodySizeLimit(t *testing.T) {
+	const limit int64 = 5
+
+	tests := []struct {
+		name           string
+		body           string
+		fixtureBody    *matcher.String
+		expectedStatus int
+	}{
+		{
+			name:           "below limit",
+			body:           "abcd",
+			fixtureBody:    ptr("abcd"),
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "exactly at limit",
+			body:           "abcde",
+			fixtureBody:    ptr("abcde"),
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "exceeds limit by one byte",
+			body:           "abcdef",
+			fixtureBody:    ptr("abcdef"),
+			expectedStatus: http.StatusRequestEntityTooLarge,
+		},
+		{
+			name:           "exceeds limit without body expectation",
+			body:           "abcdef",
+			expectedStatus: http.StatusRequestEntityTooLarge,
+		},
+		{
+			name:           "empty body",
+			expectedStatus: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fixture := newHTTPFixture(
+				http.MethodPost,
+				"/test",
+				nil,
+				tt.fixtureBody,
+				nil,
+				http.StatusOK,
+			)
+
+			service := newTestMockHTTPServiceWithConfig(
+				t,
+				&httpservice.MockHTTPServiceConfig{
+					MaxRequestBodySize: limit,
+				},
+				[]model.FixtureSpec{fixture},
+			)
+
+			if err := service.Mount(t.Context()); err != nil {
+				t.Fatalf("Mount() error = %v", err)
+			}
+
+			t.Cleanup(func() {
+				if err := service.Unmount(context.Background()); err != nil {
+					t.Errorf("Unmount() error = %v", err)
+				}
+			})
+
+			req, err := http.NewRequestWithContext(
+				t.Context(),
+				http.MethodPost,
+				"http://"+service.GetRuntimeAddress()+"/test",
+				strings.NewReader(tt.body),
+			)
+			if err != nil {
+				t.Fatalf("cannot create request: %v", err)
+			}
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("request error = %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != tt.expectedStatus {
+				t.Errorf(
+					"expected status %d, got %d",
+					tt.expectedStatus,
+					resp.StatusCode,
+				)
+			}
+
+			// An oversized request must not be classified
+			// as an ordinary fixture mismatch.
+			if got := resp.Header.Get(
+				string(keys.E2EngineMockMissHeader),
+			); got == "true" {
+				t.Error("unexpected fixture mismatch header")
+			}
+		})
+	}
+}
+
+type failingRequestBody struct{}
+
+func (f *failingRequestBody) Read(_ []byte) (int, error) {
+	return 0, errors.New("simulated read failure")
+}
+
+func (f *failingRequestBody) Close() error {
+	return nil
+}
+
+func TestMockHTTPServiceRequestBodyReadError(t *testing.T) {
+	service := newTestMockHTTPService(
+		t,
+		[]model.FixtureSpec{
+			newHTTPFixture(
+				http.MethodPost,
+				"/test",
+				nil,
+				nil,
+				nil,
+				http.StatusOK,
+			),
+		},
+	)
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"http://example.com/test",
+		nil,
+	)
+	req.Body = &failingRequestBody{}
+
+	recorder := httptest.NewRecorder()
+
+	service.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Errorf(
+			"expected status %d, got %d",
+			http.StatusBadRequest,
+			recorder.Code,
+		)
+	}
+
+	if recorder.Header().Get(
+		string(keys.E2EngineMockMissHeader),
+	) == "true" {
+		t.Error("unexpected fixture mismatch header")
+	}
+}
+
 func newTestMockHTTPService(
 	t *testing.T,
 	fixtures []model.FixtureSpec,
 ) *httpservice.MockHTTPService {
 	t.Helper()
 
+	return newTestMockHTTPServiceWithConfig(
+		t,
+		&httpservice.MockHTTPServiceConfig{
+			MaxRequestBodySize: 1048576,
+		},
+		fixtures,
+	)
+}
+
+func newTestMockHTTPServiceWithConfig(
+	t *testing.T,
+	cfg *httpservice.MockHTTPServiceConfig,
+	fixtures []model.FixtureSpec,
+) *httpservice.MockHTTPService {
+	t.Helper()
+
 	logger, err := log.NewSilentLogger()
 	if err != nil {
-		t.Fatalf(
-			"cannot create silent logger: %v",
-			err,
-		)
+		t.Fatalf("cannot create silent logger: %v", err)
 	}
 
 	return httpservice.NewMockHTTPService(
+		cfg,
 		logger,
 		&model.ServiceSpec{
 			ID:           "service-1",
