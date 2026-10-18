@@ -102,6 +102,10 @@ linters:
         linters:
           - lll
 
+      - path: ^(execute/worker/http/evaluate\.go)$
+        linters:
+          - lll
+
       - path: ^execute/runtime/router/(grpc|http)/router\.go$
         linters:
           - funlen

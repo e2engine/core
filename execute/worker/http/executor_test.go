@@ -496,19 +496,22 @@ func TestExecutorExecute(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	reporter := NewMockexecutionReporter(ctrl)
-	addressResolver := NewMockaddressResolver(ctrl)
+	resolver := NewMockaddressResolver(ctrl)
 
-	addressResolver.EXPECT().
+	resolver.EXPECT().
 		ResolveHTTPURL(logicalURL).
 		Return(resolvedURL, nil)
 
-	evaluator := NewEvaluator(reporter)
+	evaluatorCfg := &EvaluatorConfig{
+		MaxResponseBodySize: 1024 * 1024, // 1 MB
+	}
+	evaluator := NewEvaluator(evaluatorCfg, reporter)
 
 	executor := NewTestExecutor(
 		server.Client(),
 		evaluator,
 		reporter,
-		addressResolver,
+		resolver,
 	)
 
 	job := &execute.TestJob{
@@ -609,22 +612,25 @@ func TestExecutorExecuteAddressResolutionError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	reporter := NewMockexecutionReporter(ctrl)
-	addressResolver := NewMockaddressResolver(ctrl)
+	resolver := NewMockaddressResolver(ctrl)
 
-	evaluator := NewEvaluator(reporter)
+	evaluatorCfg := &EvaluatorConfig{
+		MaxResponseBodySize: 1024 * 1024, // 1 MB
+	}
+	evaluator := NewEvaluator(evaluatorCfg, reporter)
 
 	executor := NewTestExecutor(
 		nethttp.DefaultClient,
 		evaluator,
 		reporter,
-		addressResolver,
+		resolver,
 	)
 
 	const logicalURL = "http://payment-api:8080/payments"
 
 	resolveErr := nativeerrors.New("cannot resolve HTTP URL")
 
-	addressResolver.EXPECT().
+	resolver.EXPECT().
 		ResolveHTTPURL(logicalURL).
 		Return("", resolveErr)
 

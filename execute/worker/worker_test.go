@@ -12,6 +12,7 @@ import (
 
 	"github.com/e2engine/core/execute"
 	"github.com/e2engine/core/execute/call"
+	httpworker "github.com/e2engine/core/execute/worker/http"
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/pkg/errors"
 )
@@ -540,7 +541,10 @@ func TestWorkerExecuteNilReporterConfig(t *testing.T) {
 	worker := &Worker{
 		cfg: &Config{
 			TestTimeout: time.Second,
-			Reporter:    nil,
+			HTTPEvaluator: &httpworker.EvaluatorConfig{
+				MaxResponseBodySize: 1024 * 1024, // 1 MB
+			},
+			Reporter: nil,
 		},
 		client:          server.Client(),
 		addressResolver: newTestAddressResolver(t),
@@ -581,6 +585,9 @@ func newHTTPTestWorker(
 	return &Worker{
 		cfg: &Config{
 			TestTimeout: time.Second,
+			HTTPEvaluator: &httpworker.EvaluatorConfig{
+				MaxResponseBodySize: 1024 * 1024, // 1 MB
+			},
 		},
 		client:          client,
 		addressResolver: newTestAddressResolver(t),

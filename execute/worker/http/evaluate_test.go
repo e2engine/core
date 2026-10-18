@@ -14,6 +14,7 @@ import (
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/model/matcher"
+	errorsPkg "github.com/e2engine/core/pkg/errors"
 	"github.com/e2engine/core/pkg/keys"
 )
 
@@ -454,7 +455,10 @@ func TestEvaluatorEvaluateResponse(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			reporter := NewMockexecutionReporter(ctrl)
 
-			evaluator := NewEvaluator(reporter)
+			evaluatorCfg := &EvaluatorConfig{
+				MaxResponseBodySize: 1024 * 1024, // 1 MB
+			}
+			evaluator := NewEvaluator(evaluatorCfg, reporter)
 
 			response := &nethttp.Response{
 				StatusCode: tt.status,
@@ -522,7 +526,10 @@ func TestEvaluatorEvaluateResponseReadError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	reporter := NewMockexecutionReporter(ctrl)
 
-	evaluator := NewEvaluator(reporter)
+	evaluatorCfg := &EvaluatorConfig{
+		MaxResponseBodySize: 1024 * 1024, // 1 MB
+	}
+	evaluator := NewEvaluator(evaluatorCfg, reporter)
 
 	response := &nethttp.Response{
 		StatusCode: nethttp.StatusOK,
@@ -633,7 +640,10 @@ func TestEvaluatorMatches(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			reporter := NewMockexecutionReporter(ctrl)
 
-			evaluator := NewEvaluator(reporter)
+			evaluatorCfg := &EvaluatorConfig{
+				MaxResponseBodySize: 1024 * 1024, // 1 MB
+			}
+			evaluator := NewEvaluator(evaluatorCfg, reporter)
 
 			matched, err := evaluator.Matches(
 				context.Background(),
@@ -963,7 +973,10 @@ func TestEvaluatorDeviation(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	reporter := NewMockexecutionReporter(ctrl)
 
-	evaluator := NewEvaluator(reporter)
+	evaluatorCfg := &EvaluatorConfig{
+		MaxResponseBodySize: 1024 * 1024, // 1 MB
+	}
+	evaluator := NewEvaluator(evaluatorCfg, reporter)
 
 	service := &model.ServiceSpec{
 		ID: "service-1",
@@ -1045,6 +1058,125 @@ func TestEvaluatorDeviation(t *testing.T) {
 	}
 }
 
+func TestEvaluatorEvaluateResponseBodySizeLimit(t *testing.T) {
+	const limit int64 = 5
+
+	tests := []struct {
+		name    string
+		body    string
+		expect  model.HTTPResponsePattern
+		wantErr bool
+	}{
+		{
+			name:   "below limit",
+			body:   "abcd",
+			expect: model.HTTPResponsePattern{StatusCode: nethttp.StatusOK},
+		},
+		{
+			name:   "exactly at limit",
+			body:   "abcde",
+			expect: model.HTTPResponsePattern{StatusCode: nethttp.StatusOK},
+		},
+		{
+			name:    "exceeds limit without body expectation",
+			body:    "abcdef",
+			expect:  model.HTTPResponsePattern{StatusCode: nethttp.StatusOK},
+			wantErr: true,
+		},
+		{
+			name: "exceeds limit with body expectation",
+			body: "abcdef",
+			expect: model.HTTPResponsePattern{
+				StatusCode: nethttp.StatusOK,
+				Body:       &matcher.String{Value: "abcdef"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "exceeds limit with JSON expectation",
+			body: `{"a":1}`,
+			expect: model.HTTPResponsePattern{
+				StatusCode: nethttp.StatusOK,
+				BodyJSON: &matcher.String{
+					Operator: matcher.StringMatchOperatorEquals,
+					Value:    `{"a":1}`,
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			reporter := NewMockexecutionReporter(ctrl)
+
+			evaluator := NewEvaluator(
+				&EvaluatorConfig{MaxResponseBodySize: limit},
+				reporter,
+			)
+
+			response := &nethttp.Response{
+				StatusCode: nethttp.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(tt.body)),
+			}
+
+			reporter.EXPECT().AddHTTPResponseStatus(nethttp.StatusOK)
+			reporter.EXPECT().AddHTTPResponseHeaders(nil)
+
+			if !tt.wantErr {
+				reporter.EXPECT().AddHTTPResponseBody([]byte(tt.body))
+			}
+
+			err := evaluator.EvaluateResponse(response, &tt.expect)
+
+			if tt.wantErr {
+				if !errors.Is(err, errorsPkg.ErrHTTPResponseBodyTooLarge) {
+					t.Fatalf(
+						"expected ErrHTTPResponseBodyTooLarge, got %v",
+						err,
+					)
+				}
+			} else if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestEvaluatorEvaluateResponseBodySizeLimitReadError(t *testing.T) {
+	expectedErr := errors.New("read error")
+
+	ctrl := gomock.NewController(t)
+	reporter := NewMockexecutionReporter(ctrl)
+
+	evaluator := NewEvaluator(
+		&EvaluatorConfig{MaxResponseBodySize: 5},
+		reporter,
+	)
+
+	response := &nethttp.Response{
+		StatusCode: nethttp.StatusOK,
+		Body: &failingReader{
+			err: expectedErr,
+		},
+	}
+
+	reporter.EXPECT().AddHTTPResponseStatus(nethttp.StatusOK)
+	reporter.EXPECT().AddHTTPResponseHeaders(nil)
+
+	err := evaluator.EvaluateResponse(
+		response,
+		&model.HTTPResponsePattern{
+			StatusCode: nethttp.StatusOK,
+		},
+	)
+
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("expected read error, got %v", err)
+	}
+}
+
 type errorReader struct {
 	err error
 }
@@ -1085,4 +1217,16 @@ func stringMatcherOperatorValue(
 	return matcher.String{
 		Operator: operator,
 	}
+}
+
+type failingReader struct {
+	err error
+}
+
+func (r *failingReader) Read(_ []byte) (int, error) {
+	return 0, r.err
+}
+
+func (r *failingReader) Close() error {
+	return nil
 }
