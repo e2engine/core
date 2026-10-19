@@ -39,19 +39,26 @@ func TestEvaluatorEvaluateCalls(t *testing.T) {
 		reporter,
 	)
 
-	calls := &call.Store{}
+	calls := call.NewStoreFactory(
+		&call.Config{
+			MaxCalls: 1000,
+		}).New()
 
-	calls.Record(call.Call{
+	if errRecord := calls.Record(call.Call{
 		TestExecutionID: "execution-1",
 		ServiceID:       "http-service",
 		HTTP:            &call.HTTPCall{},
-	})
+	}); errRecord != nil {
+		t.Fatalf("failed to record call: %v", errRecord)
+	}
 
-	calls.Record(call.Call{
+	if errRecord := calls.Record(call.Call{
 		TestExecutionID: "execution-1",
 		ServiceID:       "grpc-service",
 		GRPC:            &call.GRPCCall{},
-	})
+	}); errRecord != nil {
+		t.Fatalf("failed to record call: %v", errRecord)
+	}
 
 	gomock.InOrder(
 		reporter.EXPECT().AddDeviation(httpEvaluator.deviation),
@@ -152,33 +159,44 @@ func TestEvaluatorEvaluateActualCalls(t *testing.T) {
 		reporter,
 	)
 
-	calls := &call.Store{}
+	calls := call.NewStoreFactory(
+		&call.Config{
+			MaxCalls: 1000,
+		}).New()
 
-	calls.Record(call.Call{
+	if errRecord := calls.Record(call.Call{
 		TestExecutionID: "execution-1",
 		ServiceID:       "http-service",
 		HTTP:            &call.HTTPCall{},
-	})
+	}); errRecord != nil {
+		t.Fatalf("failed to record call: %v", errRecord)
+	}
 
-	calls.Record(call.Call{
+	if errRecord := calls.Record(call.Call{
 		TestExecutionID: "execution-1",
 		ServiceID:       "grpc-service",
 		GRPC:            &call.GRPCCall{},
-	})
+	}); errRecord != nil {
+		t.Fatalf("failed to record call: %v", errRecord)
+	}
 
 	// Must not be evaluated because the service is not mocked.
-	calls.Record(call.Call{
+	if errRecord := calls.Record(call.Call{
 		TestExecutionID: "execution-1",
 		ServiceID:       "real-service",
 		HTTP:            &call.HTTPCall{},
-	})
+	}); errRecord != nil {
+		t.Fatalf("failed to record call: %v", errRecord)
+	}
 
 	// Must not be evaluated because it belongs to another execution.
-	calls.Record(call.Call{
+	if errRecord := calls.Record(call.Call{
 		TestExecutionID: "execution-2",
 		ServiceID:       "http-service",
 		HTTP:            &call.HTTPCall{},
-	})
+	}); errRecord != nil {
+		t.Fatalf("failed to record call: %v", errRecord)
+	}
 
 	gomock.InOrder(
 		reporter.EXPECT().AddDeviation(httpEvaluator.deviation),
@@ -236,13 +254,18 @@ func TestEvaluatorEvaluateActualCallsNoDeviation(
 		reporter,
 	)
 
-	calls := &call.Store{}
+	calls := call.NewStoreFactory(
+		&call.Config{
+			MaxCalls: 1000,
+		}).New()
 
-	calls.Record(call.Call{
+	if errRecord := calls.Record(call.Call{
 		TestExecutionID: "execution-1",
 		ServiceID:       "service-1",
 		HTTP:            &call.HTTPCall{},
-	})
+	}); errRecord != nil {
+		t.Fatalf("failed to record call: %v", errRecord)
+	}
 
 	evaluator.evaluateActualCalls(
 		[]model.ServiceSpec{
@@ -270,13 +293,18 @@ func TestEvaluatorEvaluateActualCallsUnsupportedServiceKind(
 		reporter,
 	)
 
-	calls := &call.Store{}
+	calls := call.NewStoreFactory(
+		&call.Config{
+			MaxCalls: 1000,
+		}).New()
 
-	calls.Record(call.Call{
+	if errRecord := calls.Record(call.Call{
 		TestExecutionID: "execution-1",
 		ServiceID:       "unsupported-service",
 		HTTP:            &call.HTTPCall{},
-	})
+	}); errRecord != nil {
+		t.Fatalf("failed to record call: %v", errRecord)
+	}
 
 	defer func() {
 		if recover() == nil {
@@ -400,14 +428,19 @@ func TestEvaluatorEvaluateExpectedCalls(t *testing.T) {
 				reporter,
 			)
 
-			calls := &call.Store{}
+			calls := call.NewStoreFactory(
+				&call.Config{
+					MaxCalls: 1000,
+				}).New()
 
 			for range tt.calls {
-				calls.Record(call.Call{
+				if errRecord := calls.Record(call.Call{
 					TestExecutionID: "execution-1",
 					ServiceID:       "service-1",
 					HTTP:            &call.HTTPCall{},
-				})
+				}); errRecord != nil {
+					t.Fatalf("failed to record call: %v", errRecord)
+				}
 			}
 
 			if tt.expectedDeviation != nil {
@@ -462,13 +495,18 @@ func TestEvaluatorEvaluateExpectedCallsError(
 		reporter,
 	)
 
-	calls := &call.Store{}
+	calls := call.NewStoreFactory(
+		&call.Config{
+			MaxCalls: 1000,
+		}).New()
 
-	calls.Record(call.Call{
+	if errRecord := calls.Record(call.Call{
 		TestExecutionID: "execution-1",
 		ServiceID:       "service-1",
 		HTTP:            &call.HTTPCall{},
-	})
+	}); errRecord != nil {
+		t.Fatalf("failed to record call: %v", errRecord)
+	}
 
 	err := evaluator.evaluateExpectedCalls(
 		context.Background(),
@@ -660,9 +698,12 @@ func TestEvaluatorEvaluateCallsTruncatedHTTPBody(t *testing.T) {
 		reporter,
 	)
 
-	calls := &call.Store{}
+	calls := call.NewStoreFactory(
+		&call.Config{
+			MaxCalls: 1000,
+		}).New()
 
-	calls.Record(call.Call{
+	if errRecord := calls.Record(call.Call{
 		TestExecutionID: "execution-1",
 		ServiceID:       "http-service",
 		HTTP: &call.HTTPCall{
@@ -673,7 +714,9 @@ func TestEvaluatorEvaluateCallsTruncatedHTTPBody(t *testing.T) {
 				BodyComplete:  true,
 			},
 		},
-	})
+	}); errRecord != nil {
+		t.Fatalf("failed to record call: %v", errRecord)
+	}
 
 	err := evaluator.EvaluateCalls(
 		context.Background(),

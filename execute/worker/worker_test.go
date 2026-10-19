@@ -5,6 +5,7 @@ import (
 	nativeerrors "errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -638,5 +639,95 @@ func newHTTPTestJob(
 				},
 			},
 		},
+	}
+}
+
+func TestWorkerExecuteCallStoreLimitExceeded(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusOK)
+			},
+		),
+	)
+	defer server.Close()
+
+	store := call.NewStoreFactory(
+		&call.Config{
+			MaxCalls: 1,
+		},
+	).New()
+
+	// The first call reaches the limit without exceeding it.
+	if err := store.Record(call.Call{
+		TestExecutionID: "execution-1",
+		ServiceID:       "service-1",
+	}); err != nil {
+		t.Fatalf(
+			"first Record() error = %v",
+			err,
+		)
+	}
+
+	// The second call exceeds the limit.
+	if err := store.Record(call.Call{
+		TestExecutionID: "execution-1",
+		ServiceID:       "service-1",
+	}); !nativeerrors.Is(
+		err,
+		errors.ErrCallStoreLimitExceeded,
+	) {
+		t.Fatalf(
+			"second Record() error = %v, want ErrCallStoreLimitExceeded",
+			err,
+		)
+	}
+
+	worker := newHTTPTestWorker(
+		t,
+		server.Client(),
+	)
+
+	job := newHTTPTestJob(
+		store,
+		server.URL,
+		http.StatusOK,
+	)
+
+	result, err := worker.Execute(
+		context.Background(),
+		job,
+	)
+	if err != nil {
+		t.Fatalf(
+			"Execute() error = %v",
+			err,
+		)
+	}
+
+	if result == nil {
+		t.Fatal("expected result")
+	}
+
+	if result.Status != model.ExecutionStatusError {
+		t.Errorf(
+			"status = %q, want %q",
+			result.Status,
+			model.ExecutionStatusError,
+		)
+	}
+
+	if !strings.Contains(
+		result.Summary.Error,
+		errors.ErrCallStoreLimitExceeded.Error(),
+	) {
+		t.Errorf(
+			"summary error = %q, want call store limit error",
+			result.Summary.Error,
+		)
+	}
+
+	if result.FinishedAt.IsZero() {
+		t.Error("expected FinishedAt")
 	}
 }

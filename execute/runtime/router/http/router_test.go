@@ -45,7 +45,10 @@ func TestRouter(t *testing.T) {
 	)
 	defer upstream.Close()
 
-	store := &call.Store{}
+	store := call.NewStoreFactory(
+		&call.Config{
+			MaxCalls: 1000,
+		}).New()
 	router := newTestHTTPRouter(t, store)
 
 	router.Register(&runtime.Route{
@@ -233,7 +236,10 @@ func TestRouter(t *testing.T) {
 }
 
 func TestRouterProxyError(t *testing.T) {
-	store := &call.Store{}
+	store := call.NewStoreFactory(
+		&call.Config{
+			MaxCalls: 1000,
+		}).New()
 	router := newTestHTTPRouter(t, store)
 
 	// Obtain an address that currently has no listener.
@@ -322,7 +328,10 @@ func TestRouterProxyError(t *testing.T) {
 }
 
 func TestRouterMountCancelledContext(t *testing.T) {
-	router := newTestHTTPRouter(t, &call.Store{})
+	router := newTestHTTPRouter(t, call.NewStoreFactory(
+		&call.Config{
+			MaxCalls: 1000,
+		}).New())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -338,7 +347,10 @@ func TestRouterMountCancelledContext(t *testing.T) {
 }
 
 func TestRouterUnmountCancelledContext(t *testing.T) {
-	router := newTestHTTPRouter(t, &call.Store{})
+	router := newTestHTTPRouter(t, call.NewStoreFactory(
+		&call.Config{
+			MaxCalls: 1000,
+		}).New())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -354,7 +366,13 @@ func TestRouterUnmountCancelledContext(t *testing.T) {
 }
 
 func TestRouterMultipleRoutes(t *testing.T) {
-	router := newTestHTTPRouter(t, &call.Store{})
+	router := newTestHTTPRouter(
+		t,
+		call.NewStoreFactory(
+			&call.Config{
+				MaxCalls: 1000,
+			}).New(),
+	)
 
 	router.Register(&runtime.Route{
 		ServiceID:      "service-1",
@@ -417,7 +435,10 @@ func TestRouterTruncatedBodyRecording(t *testing.T) {
 	))
 	defer upstream.Close()
 
-	store := &call.Store{}
+	store := call.NewStoreFactory(
+		&call.Config{
+			MaxCalls: 1000,
+		}).New()
 	router := newTestHTTPRouter(t, store)
 	router.cfg.MaxRecordedBodySize = 5
 

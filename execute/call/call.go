@@ -1,7 +1,8 @@
 package call
 
 type Recorder interface {
-	Record(call Call)
+	Record(call Call) error
+	Err() error
 }
 
 type Reader interface {

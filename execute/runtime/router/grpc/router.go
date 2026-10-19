@@ -310,7 +310,7 @@ func (r *Router) newHandler(
 
 		service, method := splitFullMethod(fullMethod)
 
-		r.calls.Record(
+		if errRecord := r.calls.Record(
 			call.Call{
 				TestExecutionID: testExecutionID,
 				ServiceID:       route.ServiceID,
@@ -337,7 +337,15 @@ func (r *Router) newHandler(
 					},
 				},
 			},
-		)
+		); errRecord != nil {
+			r.logger.Error(
+				"Failed to record environment gRPC call",
+				log.String(keys.EnvironmentServiceID, route.ServiceID),
+				log.String(keys.GRPCService, service),
+				log.String(keys.GRPCMethod, method),
+				log.Err(keys.Cause, errRecord),
+			)
+		}
 
 		if len(responseHeader) > 0 {
 			if errSend := stream.SendHeader(

@@ -485,10 +485,15 @@ func TestSummarizeCalls(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			store := &call.Store{}
+			store := call.NewStoreFactory(
+				&call.Config{
+					MaxCalls: 1000,
+				}).New()
 
 			for _, actual := range tt.calls {
-				store.Record(actual)
+				if errRecord := store.Record(actual); errRecord != nil {
+					t.Fatalf("failed to record call: %v", errRecord)
+				}
 			}
 
 			actual := summarizeCalls(
@@ -508,9 +513,12 @@ func TestSummarizeCalls(t *testing.T) {
 func TestSummarizeCallsDoesNotExposeCapturedData(
 	t *testing.T,
 ) {
-	store := &call.Store{}
+	store := call.NewStoreFactory(
+		&call.Config{
+			MaxCalls: 1000,
+		}).New()
 
-	store.Record(call.Call{
+	if errRecord := store.Record(call.Call{
 		TestExecutionID: "execution-1",
 		ServiceID:       "service-1",
 		HTTP: &call.HTTPCall{
@@ -538,9 +546,11 @@ func TestSummarizeCallsDoesNotExposeCapturedData(
 				Body: []byte(`{"secret":"response"}`),
 			},
 		},
-	})
+	}); errRecord != nil {
+		t.Fatalf("failed to record call: %v", errRecord)
+	}
 
-	store.Record(call.Call{
+	if errRecord := store.Record(call.Call{
 		TestExecutionID: "execution-1",
 		ServiceID:       "grpc-service",
 		GRPC: &call.GRPCCall{
@@ -564,7 +574,9 @@ func TestSummarizeCallsDoesNotExposeCapturedData(
 				Message: []byte(`{"secret": "response"}`),
 			},
 		},
-	})
+	}); errRecord != nil {
+		t.Fatalf("failed to record call: %v", errRecord)
+	}
 
 	actual := summarizeCalls(
 		"execution-1",

@@ -940,7 +940,11 @@ func newTestEnvironment(
 		modelEnv,
 		serviceProvider,
 		routerProvider,
-		call.NewStoreFactory().New(),
+		call.NewStoreFactory(
+			&call.Config{
+				MaxCalls: 1000,
+			},
+		).New(),
 	)
 	if err != nil {
 		t.Fatalf(
@@ -975,7 +979,11 @@ func newTestEnvironmentController(
 		logger,
 		serviceProvider,
 		routerProvider,
-		call.NewStoreFactory(),
+		call.NewStoreFactory(
+			&call.Config{
+				MaxCalls: 1000,
+			},
+		),
 	)
 }
 

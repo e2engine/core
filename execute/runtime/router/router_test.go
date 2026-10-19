@@ -145,6 +145,10 @@ func newTestRouter(t *testing.T) runtime.Router {
 
 	return NewProvider(cfg).Get(
 		logger,
-		call.NewStoreFactory().New(),
+		call.NewStoreFactory(
+			&call.Config{
+				MaxCalls: 1000,
+			},
+		).New(),
 	)
 }
