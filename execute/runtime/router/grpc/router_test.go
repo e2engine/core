@@ -418,6 +418,178 @@ func TestRouter(t *testing.T) {
 	}
 }
 
+func TestRouterMessageSizeLimit(t *testing.T) {
+	const limit = 5
+
+	tests := []struct {
+		name         string
+		request      rawMessage
+		response     rawMessage
+		wantCode     codes.Code
+		wantRecorded bool
+		wantUpstream bool
+	}{
+		{
+			name:         "exactly at limit",
+			request:      rawMessage{1, 2, 3, 4, 5},
+			response:     rawMessage{6, 7, 8, 9, 10},
+			wantCode:     codes.OK,
+			wantRecorded: true,
+			wantUpstream: true,
+		},
+		{
+			name:     "oversized request",
+			request:  rawMessage{1, 2, 3, 4, 5, 6},
+			response: rawMessage{7},
+			wantCode: codes.ResourceExhausted,
+		},
+		{
+			name:         "oversized response",
+			request:      rawMessage{1},
+			response:     rawMessage{2, 3, 4, 5, 6, 7},
+			wantCode:     codes.ResourceExhausted,
+			wantRecorded: true,
+			wantUpstream: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upstreamCalled := make(chan struct{}, 1)
+
+			upstream := newTestGRPCServer(
+				t,
+				func(_ any, stream grpcpkg.ServerStream) error {
+					var request rawMessage
+
+					if err := stream.RecvMsg(&request); err != nil {
+						return err
+					}
+
+					upstreamCalled <- struct{}{}
+
+					return stream.SendMsg(&tt.response)
+				},
+			)
+			defer upstream.stop()
+
+			store := &call.Store{}
+			router := newTestGRPCRouter(t, store)
+			router.cfg.MaxMessageSize = limit
+
+			router.Register(&runtime.Route{
+				ServiceID:      "service-1",
+				ListenAddress:  "127.0.0.1:0",
+				RuntimeAddress: upstream.address(),
+			})
+
+			if err := router.Mount(t.Context()); err != nil {
+				t.Fatalf("Mount() error = %v", err)
+			}
+
+			defer func() {
+				if err := router.Unmount(context.Background()); err != nil {
+					t.Errorf("Unmount() error = %v", err)
+				}
+			}()
+
+			connection, err := grpcpkg.NewClient(
+				router.mounted[0].listener.Addr().String(),
+				grpcpkg.WithTransportCredentials(
+					insecure.NewCredentials(),
+				),
+				grpcpkg.WithDefaultCallOptions(
+					grpcpkg.ForceCodec(rawCodec{}),
+				),
+			)
+			if err != nil {
+				t.Fatalf("NewClient() error = %v", err)
+			}
+			defer connection.Close()
+
+			ctx := metadata.NewOutgoingContext(
+				t.Context(),
+				e2enginegrpc.WithTestExecutionID(
+					nil,
+					"execution-1",
+				),
+			)
+
+			var response rawMessage
+
+			err = connection.Invoke(
+				ctx,
+				"/test.Service/Method",
+				&tt.request,
+				&response,
+			)
+
+			if code := status.Code(err); code != tt.wantCode {
+				t.Fatalf(
+					"status = %s, want %s (error: %v)",
+					code,
+					tt.wantCode,
+					err,
+				)
+			}
+
+			if tt.wantCode == codes.OK &&
+				string(response) != string(tt.response) {
+				t.Errorf(
+					"response = %v, want %v",
+					response,
+					tt.response,
+				)
+			}
+
+			calls := store.Get(call.Filter{
+				TestExecutionID: "execution-1",
+				ServiceID:       "service-1",
+			})
+
+			if tt.wantRecorded {
+				if len(calls) != 1 {
+					t.Fatalf(
+						"recorded calls = %d, want 1",
+						len(calls),
+					)
+				}
+
+				if calls[0].GRPC == nil {
+					t.Fatal("expected recorded gRPC call")
+				}
+
+				if calls[0].GRPC.Response.Status != tt.wantCode.String() {
+					t.Errorf(
+						"recorded status = %s, want %s",
+						calls[0].GRPC.Response.Status,
+						tt.wantCode,
+					)
+				}
+			} else if len(calls) != 0 {
+				t.Errorf(
+					"recorded calls = %d, want 0",
+					len(calls),
+				)
+			}
+
+			if tt.wantUpstream {
+				select {
+				case <-upstreamCalled:
+				default:
+					t.Error("upstream was not invoked")
+				}
+			} else {
+				select {
+				case <-upstreamCalled:
+					t.Error("unexpected upstream invocation")
+				default:
+				}
+			}
+		})
+	}
+}
+
 func TestRouterUpstreamError(t *testing.T) {
 	upstream := newTestGRPCServer(
 		t,
@@ -689,6 +861,9 @@ func newTestGRPCRouter(
 	}
 
 	return NewRouter(
+		&Config{
+			MaxMessageSize: 4 << 20,
+		},
 		logger,
 		store,
 	)

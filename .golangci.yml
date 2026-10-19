@@ -106,14 +106,17 @@ linters:
         linters:
           - lll
 
-      - path: ^(execute/runtime/service/http/config\.go)$
+      - path: ^(execute/runtime/service/(grpc|http)/config\.go)$
+        linters:
+          - lll
+
+      - path: ^execute/runtime/router/(grpc|http)/config\.go$
         linters:
           - lll
 
       - path: ^execute/runtime/router/(grpc|http)/router\.go$
         linters:
           - funlen
-          - lll
 
       - path: ^execute/runtime/(router/http/router|service/http/(mock|real))\.go$
         text: "G112:"

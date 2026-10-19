@@ -26,6 +26,7 @@ import (
 )
 
 type MockGRPCService struct {
+	cfg    *MockGRPCServiceConfig
 	logger log.Logger
 
 	spec     *model.ServiceSpec
@@ -57,11 +58,13 @@ type Fixture struct {
 }
 
 func NewMockGRPCService(
+	cfg *MockGRPCServiceConfig,
 	logger log.Logger,
 	spec *model.ServiceSpec,
 	resolver MethodResolver,
 ) *MockGRPCService {
 	return &MockGRPCService{
+		cfg: cfg,
 		logger: logger.With(
 			log.String(
 				keys.EnvironmentServiceID,
@@ -103,6 +106,8 @@ func (s *MockGRPCService) Mount(
 	s.runtimeAddress = listener.Addr().String()
 
 	s.server = ggrpc.NewServer(
+		ggrpc.MaxRecvMsgSize(s.cfg.MaxMessageSize),
+		ggrpc.MaxSendMsgSize(s.cfg.MaxMessageSize),
 		ggrpc.UnknownServiceHandler(s.handle),
 	)
 

@@ -50,6 +50,7 @@ func (r *Router) Register(route *runtime.Route) {
 
 type Config struct {
 	HTTP *httprouter.Config `json:"http" yaml:"http" default:"dive"`
+	GRPC *grpcrouter.Config `json:"grpc" yaml:"grpc" default:"dive"`
 }
 
 type Provider struct {
@@ -70,6 +71,7 @@ func (p *Provider) Get(logger log.Logger, calls call.Recorder) runtime.Router {
 			calls,
 		),
 		grpc: grpcrouter.NewRouter(
+			p.cfg.GRPC,
 			logger.With(log.String(keys.Component, "environment_grpc_router")),
 			calls,
 		),

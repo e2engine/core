@@ -70,6 +70,7 @@ func (p *Provider) GetService(
 	case spec.Kind == model.ServiceKindGRPC &&
 		spec.Mode == model.ServiceModeMocked:
 		return grpcservice.NewMockGRPCService(
+			p.cfg.MockGRPC,
 			p.logger,
 			spec,
 			p.grpcMethodResolver,
@@ -78,6 +79,7 @@ func (p *Provider) GetService(
 	case spec.Kind == model.ServiceKindGRPC &&
 		spec.Mode == model.ServiceModeReal:
 		return grpcservice.NewRealGRPCService(
+			p.cfg.RealGRPC,
 			p.logger,
 			spec,
 			p.addressResolver,

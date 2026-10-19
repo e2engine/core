@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -1160,6 +1161,9 @@ func TestMockGRPCServiceHandle(t *testing.T) {
 	method := testMethodDescriptor(t)
 
 	service := &MockGRPCService{
+		cfg: &MockGRPCServiceConfig{
+			MaxMessageSize: 4 << 20,
+		},
 		logger: logger,
 		spec: &model.ServiceSpec{
 			Proto: &model.GRPCProtoSpec{},
@@ -1317,6 +1321,141 @@ func TestMockGRPCServiceHandle(t *testing.T) {
 			"Yaroslav",
 			actual,
 		)
+	}
+}
+
+func TestMockGRPCServiceMessageSizeLimit(t *testing.T) {
+	method := testMethodDescriptor(t)
+
+	tests := []struct {
+		name         string
+		requestID    string
+		responseName string
+		limit        int
+		wantCode     codes.Code
+	}{
+		{
+			name:      "request exactly at limit",
+			requestID: "abc",
+			limit:     5,
+			wantCode:  codes.OK,
+		},
+		{
+			name:      "request exceeds limit",
+			requestID: "abcd",
+			limit:     5,
+			wantCode:  codes.ResourceExhausted,
+		},
+		{
+			name:         "response exactly at limit",
+			responseName: "abc",
+			limit:        5,
+			wantCode:     codes.OK,
+		},
+		{
+			name:         "response exceeds limit",
+			responseName: "abcd",
+			limit:        5,
+			wantCode:     codes.ResourceExhausted,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger, err := log.NewSilentLogger()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			service := &MockGRPCService{
+				cfg: &MockGRPCServiceConfig{
+					MaxMessageSize: tt.limit,
+				},
+				logger: logger,
+				spec: &model.ServiceSpec{
+					Proto: &model.GRPCProtoSpec{},
+				},
+				fixtures: []Fixture{
+					{
+						service: "users.v1.UserService",
+						method:  "GetUser",
+						status:  codes.OK,
+						response: map[string]any{
+							"name": tt.responseName,
+						},
+					},
+				},
+				resolver: &testMethodResolver{
+					method: method,
+				},
+			}
+
+			if err := service.Mount(t.Context()); err != nil {
+				t.Fatalf("Mount() error = %v", err)
+			}
+
+			defer func() {
+				ctx, cancel := context.WithTimeout(
+					context.Background(),
+					5*time.Second,
+				)
+				defer cancel()
+
+				if err := service.Unmount(ctx); err != nil {
+					t.Errorf("Unmount() error = %v", err)
+				}
+			}()
+
+			conn, err := grpc.NewClient(
+				service.GetRuntimeAddress(),
+				grpc.WithTransportCredentials(
+					insecure.NewCredentials(),
+				),
+			)
+			if err != nil {
+				t.Fatalf("NewClient() error = %v", err)
+			}
+			defer conn.Close()
+
+			request := dynamicpb.NewMessage(method.Input())
+
+			if tt.requestID != "" {
+				request.Set(
+					method.Input().Fields().ByName("id"),
+					protoreflect.ValueOfString(tt.requestID),
+				)
+			}
+
+			response := dynamicpb.NewMessage(method.Output())
+
+			err = conn.Invoke(
+				t.Context(),
+				"/users.v1.UserService/GetUser",
+				request,
+				response,
+			)
+
+			if code := status.Code(err); code != tt.wantCode {
+				t.Fatalf(
+					"status = %s, want %s (error: %v)",
+					code,
+					tt.wantCode,
+					err,
+				)
+			}
+
+			if tt.wantCode == codes.OK {
+				name := method.Output().Fields().ByName("name")
+
+				if got := response.Get(name).String(); got != tt.responseName {
+					t.Errorf(
+						"response name = %q, want %q",
+						got,
+						tt.responseName,
+					)
+				}
+			}
+		})
 	}
 }
 

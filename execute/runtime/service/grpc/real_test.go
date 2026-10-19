@@ -9,8 +9,10 @@ import (
 
 	"go.uber.org/mock/gomock"
 	ggrpc "google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/pkg/errors"
@@ -356,6 +358,9 @@ func TestRealGRPCServiceProxy(t *testing.T) {
 	}
 
 	service, err := NewRealGRPCService(
+		&RealGRPCServiceConfig{
+			MaxMessageSize: 4 << 20,
+		},
 		logger,
 		&model.ServiceSpec{
 			ID:     "upstream",
@@ -514,5 +519,346 @@ func TestRealGRPCServiceProxy(t *testing.T) {
 			"trailer-value",
 			trailer,
 		)
+	}
+}
+
+func TestRealGRPCServiceProxyErrorMetadata(t *testing.T) {
+	const (
+		logicalTarget = "gateway-host:9000"
+		fullMethod    = "/users.v1.UserService/GetUser"
+	)
+
+	listener, err := (&net.ListenConfig{}).Listen(
+		t.Context(),
+		"tcp",
+		"127.0.0.1:0",
+	)
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+
+	upstream := ggrpc.NewServer(
+		ggrpc.ForceServerCodec(rawCodec{}),
+		ggrpc.UnknownServiceHandler(
+			func(_ any, stream ggrpc.ServerStream) error {
+				var request rawMessage
+
+				if err := stream.RecvMsg(&request); err != nil {
+					return err
+				}
+
+				if string(request) != "request payload" {
+					t.Errorf(
+						"upstream request = %q, want %q",
+						request,
+						"request payload",
+					)
+				}
+
+				if err := stream.SendHeader(
+					metadata.Pairs(
+						"x-request-id",
+						"abc123",
+					),
+				); err != nil {
+					return err
+				}
+
+				stream.SetTrailer(
+					metadata.Pairs(
+						"x-error-code",
+						"ACCESS_DENIED",
+					),
+				)
+
+				return status.Error(
+					codes.PermissionDenied,
+					"access denied",
+				)
+			},
+		),
+	)
+
+	go func() {
+		_ = upstream.Serve(listener)
+	}()
+
+	defer upstream.Stop()
+
+	ctrl := gomock.NewController(t)
+
+	resolver := NewMockaddressResolver(ctrl)
+
+	resolver.EXPECT().
+		ResolveGRPCTarget(logicalTarget).
+		Return(listener.Addr().String(), nil)
+
+	logger, err := log.NewSilentLogger()
+	if err != nil {
+		t.Fatalf("NewSilentLogger() error = %v", err)
+	}
+
+	service, err := NewRealGRPCService(
+		&RealGRPCServiceConfig{
+			MaxMessageSize: 4 << 20,
+		},
+		logger,
+		&model.ServiceSpec{
+			ID:     "upstream",
+			Target: logicalTarget,
+		},
+		resolver,
+	)
+	if err != nil {
+		t.Fatalf("NewRealGRPCService() error = %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		5*time.Second,
+	)
+	defer cancel()
+
+	if err := service.Mount(ctx); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+
+	defer func() {
+		unmountCtx, unmountCancel := context.WithTimeout(
+			context.Background(),
+			5*time.Second,
+		)
+		defer unmountCancel()
+
+		if err := service.Unmount(unmountCtx); err != nil {
+			t.Errorf("Unmount() error = %v", err)
+		}
+	}()
+
+	connection, err := ggrpc.NewClient(
+		service.GetRuntimeAddress(),
+		ggrpc.WithTransportCredentials(
+			insecure.NewCredentials(),
+		),
+		ggrpc.WithDefaultCallOptions(
+			ggrpc.ForceCodec(rawCodec{}),
+		),
+	)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer connection.Close()
+
+	request := rawMessage("request payload")
+
+	var response rawMessage
+	var responseHeader metadata.MD
+	var responseTrailer metadata.MD
+
+	err = connection.Invoke(
+		ctx,
+		fullMethod,
+		&request,
+		&response,
+		ggrpc.Header(&responseHeader),
+		ggrpc.Trailer(&responseTrailer),
+	)
+
+	if code := status.Code(err); code != codes.PermissionDenied {
+		t.Errorf(
+			"status = %s, want %s (error: %v)",
+			code,
+			codes.PermissionDenied,
+			err,
+		)
+	}
+
+	if got := status.Convert(err).Message(); got != "access denied" {
+		t.Errorf(
+			"status message = %q, want %q",
+			got,
+			"access denied",
+		)
+	}
+
+	if values := responseHeader.Get("x-request-id"); len(values) != 1 ||
+		values[0] != "abc123" {
+		t.Errorf(
+			"response header = %v, want [abc123]",
+			values,
+		)
+	}
+
+	if values := responseTrailer.Get("x-error-code"); len(values) != 1 ||
+		values[0] != "ACCESS_DENIED" {
+		t.Errorf(
+			"response trailer = %v, want [ACCESS_DENIED]",
+			values,
+		)
+	}
+
+	if len(response) != 0 {
+		t.Errorf(
+			"expected empty response message, got %v",
+			response,
+		)
+	}
+}
+
+func TestRealGRPCServiceMessageSizeLimit(t *testing.T) {
+	const limit = 5
+
+	tests := []struct {
+		name     string
+		request  rawMessage
+		response rawMessage
+		wantCode codes.Code
+	}{
+		{
+			name:     "exactly at limit",
+			request:  rawMessage{1, 2, 3, 4, 5},
+			response: rawMessage{6, 7, 8, 9, 10},
+			wantCode: codes.OK,
+		},
+		{
+			name:     "request exceeds limit",
+			request:  rawMessage{1, 2, 3, 4, 5, 6},
+			response: rawMessage{7},
+			wantCode: codes.ResourceExhausted,
+		},
+		{
+			name:     "response exceeds limit",
+			request:  rawMessage{1},
+			response: rawMessage{2, 3, 4, 5, 6, 7},
+			wantCode: codes.ResourceExhausted,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upstreamListener, err := (&net.ListenConfig{}).Listen(
+				t.Context(),
+				"tcp",
+				"127.0.0.1:0",
+			)
+			if err != nil {
+				t.Fatalf("Listen() error = %v", err)
+			}
+
+			upstream := ggrpc.NewServer(
+				ggrpc.ForceServerCodec(rawCodec{}),
+				ggrpc.UnknownServiceHandler(
+					func(_ any, stream ggrpc.ServerStream) error {
+						var request rawMessage
+
+						if err := stream.RecvMsg(&request); err != nil {
+							return err
+						}
+
+						if string(request) != string(tt.request) {
+							t.Errorf(
+								"upstream request = %v, want %v",
+								request,
+								tt.request,
+							)
+						}
+
+						return stream.SendMsg(&tt.response)
+					},
+				),
+			)
+
+			go func() {
+				_ = upstream.Serve(upstreamListener)
+			}()
+			defer upstream.Stop()
+
+			ctrl := gomock.NewController(t)
+			resolver := NewMockaddressResolver(ctrl)
+
+			const logicalTarget = "gateway-host:9000"
+
+			resolver.EXPECT().
+				ResolveGRPCTarget(logicalTarget).
+				Return(upstreamListener.Addr().String(), nil)
+
+			logger, err := log.NewSilentLogger()
+			if err != nil {
+				t.Fatalf("NewSilentLogger() error = %v", err)
+			}
+
+			service, err := NewRealGRPCService(
+				&RealGRPCServiceConfig{
+					MaxMessageSize: limit,
+				},
+				logger,
+				&model.ServiceSpec{
+					ID:     "upstream",
+					Target: logicalTarget,
+				},
+				resolver,
+			)
+			if err != nil {
+				t.Fatalf("NewRealGRPCService() error = %v", err)
+			}
+
+			if err := service.Mount(t.Context()); err != nil {
+				t.Fatalf("Mount() error = %v", err)
+			}
+
+			defer func() {
+				ctx, cancel := context.WithTimeout(
+					context.Background(),
+					5*time.Second,
+				)
+				defer cancel()
+
+				if err := service.Unmount(ctx); err != nil {
+					t.Errorf("Unmount() error = %v", err)
+				}
+			}()
+
+			connection, err := ggrpc.NewClient(
+				service.GetRuntimeAddress(),
+				ggrpc.WithTransportCredentials(
+					insecure.NewCredentials(),
+				),
+				ggrpc.WithDefaultCallOptions(
+					ggrpc.ForceCodec(rawCodec{}),
+				),
+			)
+			if err != nil {
+				t.Fatalf("NewClient() error = %v", err)
+			}
+			defer connection.Close()
+
+			var response rawMessage
+
+			err = connection.Invoke(
+				t.Context(),
+				"/users.v1.UserService/GetUser",
+				&tt.request,
+				&response,
+			)
+
+			if code := status.Code(err); code != tt.wantCode {
+				t.Fatalf(
+					"status = %s, want %s (error: %v)",
+					code,
+					tt.wantCode,
+					err,
+				)
+			}
+
+			if tt.wantCode == codes.OK {
+				if string(response) != string(tt.response) {
+					t.Errorf(
+						"response = %v, want %v",
+						response,
+						tt.response,
+					)
+				}
+			}
+		})
 	}
 }

@@ -25,10 +25,6 @@ type Router struct {
 	mounted  []mountedRoute
 }
 
-type Config struct {
-	MaxRecordedBodySize int64 `json:"max_recorded_body_size" yaml:"max_recorded_body_size" default:"1048576" validate:"min(1),max(67108864)"`
-}
-
 func NewRouter(
 	cfg *Config,
 	logger log.Logger,
