@@ -108,14 +108,22 @@ func (r *Router) Mount(ctx context.Context) error {
 
 			proxy.ServeHTTP(response, req)
 
-			r.calls.Record(call.Call{
+			if errRecord := r.calls.Record(call.Call{
 				TestExecutionID: e2enginehttp.TestExecutionID(req.Header),
 				ServiceID:       route.ServiceID,
 				HTTP: &call.HTTPCall{
 					Request:  request.GetRequest(),
 					Response: response.GetResponse(),
 				},
-			})
+			}); errRecord != nil {
+				r.logger.Error(
+					"Failed to record environment HTTP call",
+					log.String(keys.EnvironmentServiceID, route.ServiceID),
+					log.String(keys.RequestMethod, req.Method),
+					log.String(keys.RequestURLPath, req.URL.Path),
+					log.Err(keys.Cause, errRecord),
+				)
+			}
 		})
 
 		listenerConfig := net.ListenConfig{}

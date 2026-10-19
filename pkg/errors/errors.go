@@ -70,6 +70,8 @@ var (
 	ErrHTTPRecordedRequestBodyIncomplete = errorc.New("recorded HTTP request body is incomplete")
 
 	ErrGRPCRequestMessageTooLarge = errorc.New("gRPC request message too large")
+
+	ErrCallStoreLimitExceeded = errorc.New("call store maximum number of calls exceeded")
 )
 
 // Is wraps native errors package Is.

@@ -218,7 +218,10 @@ func TestRouter(t *testing.T) {
 	)
 	defer upstream.stop()
 
-	store := &call.Store{}
+	store := call.NewStoreFactory(
+		&call.Config{
+			MaxCalls: 1000,
+		}).New()
 	router := newTestGRPCRouter(t, store)
 
 	router.Register(&runtime.Route{
@@ -473,7 +476,10 @@ func TestRouterMessageSizeLimit(t *testing.T) {
 			)
 			defer upstream.stop()
 
-			store := &call.Store{}
+			store := call.NewStoreFactory(
+				&call.Config{
+					MaxCalls: 1000,
+				}).New()
 			router := newTestGRPCRouter(t, store)
 			router.cfg.MaxMessageSize = limit
 
@@ -611,7 +617,10 @@ func TestRouterUpstreamError(t *testing.T) {
 	)
 	defer upstream.stop()
 
-	store := &call.Store{}
+	store := call.NewStoreFactory(
+		&call.Config{
+			MaxCalls: 1000,
+		}).New()
 	router := newTestGRPCRouter(t, store)
 
 	router.Register(&runtime.Route{
@@ -700,7 +709,10 @@ func TestRouterUpstreamError(t *testing.T) {
 func TestRouterMountCancelledContext(t *testing.T) {
 	router := newTestGRPCRouter(
 		t,
-		&call.Store{},
+		call.NewStoreFactory(
+			&call.Config{
+				MaxCalls: 1000,
+			}).New(),
 	)
 
 	ctx, cancel := context.WithCancel(
@@ -721,7 +733,10 @@ func TestRouterMountCancelledContext(t *testing.T) {
 func TestRouterUnmountCancelledContext(t *testing.T) {
 	router := newTestGRPCRouter(
 		t,
-		&call.Store{},
+		call.NewStoreFactory(
+			&call.Config{
+				MaxCalls: 1000,
+			}).New(),
 	)
 
 	ctx, cancel := context.WithCancel(
@@ -764,7 +779,10 @@ func TestRouterMultipleRoutes(t *testing.T) {
 
 	router := newTestGRPCRouter(
 		t,
-		&call.Store{},
+		call.NewStoreFactory(
+			&call.Config{
+				MaxCalls: 1000,
+			}).New(),
 	)
 
 	router.Register(&runtime.Route{

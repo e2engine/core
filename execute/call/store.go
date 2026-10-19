@@ -1,20 +1,43 @@
 package call
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/e2engine/core/pkg/errors"
+)
 
 type Store struct {
-	mu    sync.RWMutex
-	calls []Call
+	mu            sync.RWMutex
+	calls         []Call
+	maxCalls      int
+	limitExceeded bool
 }
 
 var _ Recorder = (*Store)(nil)
 var _ Reader = (*Store)(nil)
 
-func (c *Store) Record(call Call) {
+func (c *Store) Record(call Call) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.limitExceeded || len(c.calls) >= c.maxCalls {
+		c.limitExceeded = true
+		return errors.ErrCallStoreLimitExceeded
+	}
+
 	c.calls = append(c.calls, call)
+	return nil
+}
+
+func (c *Store) Err() error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.limitExceeded {
+		return errors.ErrCallStoreLimitExceeded
+	}
+
+	return nil
 }
 
 type Filter struct {
@@ -48,12 +71,18 @@ type StoreFactory interface {
 	New() *Store
 }
 
-type factory struct{}
-
-func (f *factory) New() *Store {
-	return &Store{}
+type factory struct {
+	cfg *Config
 }
 
-func NewStoreFactory() StoreFactory {
-	return &factory{}
+func (f *factory) New() *Store {
+	return &Store{
+		maxCalls: f.cfg.MaxCalls,
+	}
+}
+
+func NewStoreFactory(cfg *Config) StoreFactory {
+	return &factory{
+		cfg: cfg,
+	}
 }

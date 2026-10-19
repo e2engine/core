@@ -129,25 +129,43 @@ func (w *Worker) Execute(
 		return reporter.Result(), nil
 	}
 
-	if err := executor.Execute(
+	executionErr := executor.Execute(
 		runCtx,
 		&job,
-	); err != nil {
+	)
+
+	if err := callStore.Err(); err != nil {
 		reporter.SummarizeCalls(callStore)
 		reporter.SetError(err)
 
 		return reporter.Result(), nil
 	}
 
-	if err := evaluator.EvaluateCalls(
+	if executionErr != nil {
+		reporter.SummarizeCalls(callStore)
+		reporter.SetError(executionErr)
+
+		return reporter.Result(), nil
+	}
+
+	evaluationErr := evaluator.EvaluateCalls(
 		runCtx,
 		job.Environment.Spec.Services,
 		job.Test.Spec.Expect.Calls,
 		callStore,
 		job.ExecutionID,
-	); err != nil {
+	)
+
+	if err := callStore.Err(); err != nil {
 		reporter.SummarizeCalls(callStore)
 		reporter.SetError(err)
+
+		return reporter.Result(), nil
+	}
+
+	if evaluationErr != nil {
+		reporter.SummarizeCalls(callStore)
+		reporter.SetError(evaluationErr)
 
 		return reporter.Result(), nil
 	}
