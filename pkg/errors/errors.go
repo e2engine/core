@@ -68,6 +68,8 @@ var (
 	ErrHTTPResponseBodyTooLarge          = errorc.New("HTTP response body too large")
 	ErrHTTPRecordedRequestBodyTruncated  = errorc.New("recorded HTTP request body is truncated")
 	ErrHTTPRecordedRequestBodyIncomplete = errorc.New("recorded HTTP request body is incomplete")
+
+	ErrGRPCRequestMessageTooLarge = errorc.New("gRPC request message too large")
 )
 
 // Is wraps native errors package Is.

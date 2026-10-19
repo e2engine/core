@@ -31,6 +31,7 @@ type Worker struct {
 type Config struct {
 	TestTimeout   time.Duration               `json:"test_timeout" yaml:"test_timeout" default:"30s" validate:"min(1s)"`
 	HTTPEvaluator *httpworker.EvaluatorConfig `json:"http_evaluator" yaml:"http_evaluator" default:"dive"`
+	GRPCExecutor  *grpcworker.ExecutorConfig  `json:"grpc_executor" yaml:"grpc_executor" default:"dive"`
 	Reporter      *reporterPkg.Config         `json:"reporter" yaml:"reporter"`
 }
 
@@ -105,6 +106,7 @@ func (w *Worker) Execute(
 
 	case job.Test.Spec.Request.GRPC != nil:
 		executor = grpcworker.NewTestExecutor(
+			w.cfg.GRPCExecutor,
 			w.grpcMethodResolver,
 			grpcEvaluator,
 			reporter,

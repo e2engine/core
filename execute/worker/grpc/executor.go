@@ -10,6 +10,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/dynamicpb"
 
 	"github.com/e2engine/core/execute"
@@ -20,6 +21,7 @@ import (
 )
 
 type TestExecutor struct {
+	cfg             *ExecutorConfig
 	resolver        servicegrpc.MethodResolver
 	evaluator       *Evaluator
 	reporter        executionReporter
@@ -27,12 +29,14 @@ type TestExecutor struct {
 }
 
 func NewTestExecutor(
+	cfg *ExecutorConfig,
 	resolver servicegrpc.MethodResolver,
 	evaluator *Evaluator,
 	reporter executionReporter,
 	addressResolver addressResolver,
 ) *TestExecutor {
 	return &TestExecutor{
+		cfg:             cfg,
 		resolver:        resolver,
 		evaluator:       evaluator,
 		reporter:        reporter,
@@ -84,6 +88,10 @@ func (e *TestExecutor) Execute(
 		)
 	}
 
+	if proto.Size(request) > e.cfg.MaxMessageSize {
+		return errors.ErrGRPCRequestMessageTooLarge
+	}
+
 	resolvedTarget, err := e.addressResolver.ResolveGRPCTarget(spec.Target)
 	if err != nil {
 		return err
@@ -93,6 +101,10 @@ func (e *TestExecutor) Execute(
 		resolvedTarget,
 		ggrpc.WithTransportCredentials(
 			insecure.NewCredentials(),
+		),
+		ggrpc.WithDefaultCallOptions(
+			ggrpc.MaxCallRecvMsgSize(e.cfg.MaxMessageSize),
+			ggrpc.MaxCallSendMsgSize(e.cfg.MaxMessageSize),
 		),
 	)
 	if err != nil {
@@ -125,6 +137,8 @@ func (e *TestExecutor) Execute(
 
 	e.reporter.AddGRPCRequest(r)
 
+	// TODO: distinguish local gRPC receive-message size limit errors
+	// from ResourceExhausted status returned by the remote service.
 	callErr := connection.Invoke(
 		callCtx,
 		"/"+spec.Service+"/"+spec.Method,
