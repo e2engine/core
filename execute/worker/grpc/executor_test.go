@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net"
 	"reflect"
+	"strings"
 	"testing"
 
 	e2enginegrpc "github.com/e2engine/instrumentation-go/grpc"
@@ -21,6 +22,7 @@ import (
 	servicegrpc "github.com/e2engine/core/execute/runtime/service/grpc"
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/model/matcher"
+	pkgerrors "github.com/e2engine/core/pkg/errors"
 )
 
 func TestFindProtoSpec(t *testing.T) {
@@ -391,9 +393,9 @@ func TestExecutorExecute(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	reporter := NewMockexecutionReporter(ctrl)
-	addressResolver := NewMockaddressResolver(ctrl)
+	resolver := NewMockaddressResolver(ctrl)
 
-	addressResolver.EXPECT().
+	resolver.EXPECT().
 		ResolveGRPCTarget(logicalTarget).
 		Return(resolvedTarget, nil)
 
@@ -403,10 +405,13 @@ func TestExecutorExecute(t *testing.T) {
 	)
 
 	executor := NewTestExecutor(
+		&ExecutorConfig{
+			MaxMessageSize: 4 << 20,
+		},
 		methodResolver,
 		evaluator,
 		reporter,
-		addressResolver,
+		resolver,
 	)
 
 	job := &execute.TestJob{
@@ -633,9 +638,9 @@ func TestExecutorExecuteWithTestLevelProto(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	reporter := NewMockexecutionReporter(ctrl)
-	addressResolver := NewMockaddressResolver(ctrl)
+	resolver := NewMockaddressResolver(ctrl)
 
-	addressResolver.EXPECT().
+	resolver.EXPECT().
 		ResolveGRPCTarget(logicalTarget).
 		Return(resolvedTarget, nil)
 
@@ -663,10 +668,13 @@ func TestExecutorExecuteWithTestLevelProto(t *testing.T) {
 		AnyTimes()
 
 	executor := NewTestExecutor(
+		&ExecutorConfig{
+			MaxMessageSize: 4 << 20,
+		},
 		methodResolver,
 		NewEvaluator(methodResolver, reporter),
 		reporter,
-		addressResolver,
+		resolver,
 	)
 
 	job := &execute.TestJob{
@@ -722,7 +730,7 @@ func TestExecutorExecuteAddressResolutionError(t *testing.T) {
 	ctrl := gomock.NewController(t)
 
 	reporter := NewMockexecutionReporter(ctrl)
-	addressResolver := NewMockaddressResolver(ctrl)
+	resolver := NewMockaddressResolver(ctrl)
 
 	methodResolver := servicegrpc.NewProtoMethodResolver(nil)
 
@@ -732,17 +740,20 @@ func TestExecutorExecuteAddressResolutionError(t *testing.T) {
 	)
 
 	executor := NewTestExecutor(
+		&ExecutorConfig{
+			MaxMessageSize: 4 << 20,
+		},
 		methodResolver,
 		evaluator,
 		reporter,
-		addressResolver,
+		resolver,
 	)
 
 	const logicalTarget = "gateway-host:50051"
 
 	resolveErr := errors.New("cannot resolve gRPC target")
 
-	addressResolver.EXPECT().
+	resolver.EXPECT().
 		ResolveGRPCTarget(logicalTarget).
 		Return("", resolveErr)
 
@@ -782,6 +793,236 @@ func TestExecutorExecuteAddressResolutionError(t *testing.T) {
 			resolveErr,
 			err,
 		)
+	}
+}
+
+func TestExecutorExecuteRequestMessageSizeLimit(t *testing.T) {
+	service := testServiceSpec()
+	methodResolver := servicegrpc.NewProtoMethodResolver(nil)
+
+	tests := []struct {
+		name    string
+		message string
+		maxSize int
+		wantErr bool
+	}{
+		{
+			name:    "below limit",
+			message: "abc",
+			maxSize: 100,
+		},
+		{
+			name:    "exceeds limit",
+			message: "abcdefghij",
+			maxSize: 5,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+
+			reporter := NewMockexecutionReporter(ctrl)
+			resolver := NewMockaddressResolver(ctrl)
+
+			evaluator := NewEvaluator(
+				methodResolver,
+				reporter,
+			)
+
+			executor := NewTestExecutor(
+				&ExecutorConfig{
+					MaxMessageSize: tt.maxSize,
+				},
+				methodResolver,
+				evaluator,
+				reporter,
+				resolver,
+			)
+
+			job := &execute.TestJob{
+				ExecutionID: "execution-123",
+				Environment: model.Environment{
+					Spec: model.EnvironmentSpec{
+						Services: []model.ServiceSpec{
+							*service,
+						},
+					},
+				},
+				Test: model.Test{
+					Spec: model.TestSpec{
+						Request: model.RequestSpec{
+							GRPC: &model.GRPCRequest{
+								Target:  "gateway-host:50051",
+								Service: "users.UserService",
+								Method:  "Create",
+								Message: map[string]any{
+									"name": tt.message,
+								},
+							},
+						},
+					},
+				},
+			}
+
+			if tt.wantErr {
+				err := executor.Execute(t.Context(), job)
+
+				if !errors.Is(
+					err,
+					pkgerrors.ErrGRPCRequestMessageTooLarge,
+				) {
+					t.Fatalf(
+						"expected ErrGRPCRequestMessageTooLarge, got %v",
+						err,
+					)
+				}
+
+				return
+			}
+
+			// A request within the limit must proceed
+			// to address resolution.
+			resolveErr := errors.New("resolution reached")
+
+			resolver.EXPECT().
+				ResolveGRPCTarget("gateway-host:50051").
+				Return("", resolveErr)
+
+			err := executor.Execute(t.Context(), job)
+
+			if !errors.Is(err, resolveErr) {
+				t.Fatalf(
+					"expected resolution error, got %v",
+					err,
+				)
+			}
+		})
+	}
+}
+
+func TestExecutorExecuteResponseMessageSizeLimit(t *testing.T) {
+	service := testServiceSpec()
+	methodResolver := servicegrpc.NewProtoMethodResolver(nil)
+
+	method, err := methodResolver.ResolveMethod(
+		t.Context(),
+		service.Proto,
+		"Create",
+	)
+	if err != nil {
+		t.Fatalf("ResolveMethod() error = %v", err)
+	}
+
+	listener, err := (&net.ListenConfig{}).Listen(
+		t.Context(),
+		"tcp",
+		"127.0.0.1:0",
+	)
+	if err != nil {
+		t.Fatalf("Listen() error = %v", err)
+	}
+	defer listener.Close()
+
+	server := ggrpc.NewServer(
+		ggrpc.UnknownServiceHandler(
+			func(_ any, stream ggrpc.ServerStream) error {
+				request := dynamicpb.NewMessage(method.Input())
+
+				if err := stream.RecvMsg(request); err != nil {
+					return err
+				}
+
+				response := dynamicpb.NewMessage(method.Output())
+
+				response.Set(
+					method.Output().Fields().ByName("id"),
+					protoreflect.ValueOfString(
+						strings.Repeat("x", 1024),
+					),
+				)
+
+				return stream.SendMsg(response)
+			},
+		),
+	)
+
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	defer server.Stop()
+
+	const logicalTarget = "gateway-host:50051"
+
+	ctrl := gomock.NewController(t)
+
+	reporter := NewMockexecutionReporter(ctrl)
+	resolver := NewMockaddressResolver(ctrl)
+
+	resolver.EXPECT().
+		ResolveGRPCTarget(logicalTarget).
+		Return(listener.Addr().String(), nil)
+
+	reporter.EXPECT().
+		AddGRPCRequest(gomock.Any())
+
+	reporter.EXPECT().
+		AddGRPCResponseStatus("ResourceExhausted")
+
+	reporter.EXPECT().
+		AddGRPCResponseMetadata(gomock.Any()).
+		AnyTimes()
+
+	reporter.EXPECT().
+		AddDeviation(gomock.Any()).
+		AnyTimes()
+
+	// The oversized response must not be decoded and reported.
+	// The evaluator reports an empty message when the receive limit is exceeded.
+	reporter.EXPECT().
+		AddGRPCResponseMessage(map[string]any{})
+
+	executor := NewTestExecutor(
+		&ExecutorConfig{
+			MaxMessageSize: 32,
+		},
+		methodResolver,
+		NewEvaluator(methodResolver, reporter),
+		reporter,
+		resolver,
+	)
+
+	job := &execute.TestJob{
+		ExecutionID: "execution-123",
+		Environment: model.Environment{
+			Spec: model.EnvironmentSpec{
+				Services: []model.ServiceSpec{*service},
+			},
+		},
+		Test: model.Test{
+			Spec: model.TestSpec{
+				Request: model.RequestSpec{
+					GRPC: &model.GRPCRequest{
+						Target:  logicalTarget,
+						Service: "users.UserService",
+						Method:  "Create",
+						Message: map[string]any{
+							"name": "a",
+						},
+					},
+				},
+				Expect: model.ExpectSpec{
+					GRPC: &model.GRPCResponsePattern{
+						Status: "ResourceExhausted",
+					},
+				},
+			},
+		},
+	}
+
+	if err := executor.Execute(t.Context(), job); err != nil {
+		t.Fatalf("Execute() error = %v", err)
 	}
 }
 
