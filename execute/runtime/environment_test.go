@@ -942,7 +942,8 @@ func newTestEnvironment(
 		routerProvider,
 		call.NewStoreFactory(
 			&call.Config{
-				MaxCalls: 1000,
+				MaxCalls:         1000,
+				MaxRecordedBytes: 1024 * 1024,
 			},
 		).New(),
 	)
@@ -981,7 +982,8 @@ func newTestEnvironmentController(
 		routerProvider,
 		call.NewStoreFactory(
 			&call.Config{
-				MaxCalls: 1000,
+				MaxCalls:         1000,
+				MaxRecordedBytes: 1024 * 1024,
 			},
 		),
 	)

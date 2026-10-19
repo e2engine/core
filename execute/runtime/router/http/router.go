@@ -12,12 +12,13 @@ import (
 
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/execute/runtime"
+	"github.com/e2engine/core/execute/runtime/config"
 	"github.com/e2engine/core/pkg/keys"
 	"github.com/e2engine/core/pkg/log"
 )
 
 type Router struct {
-	cfg    *Config
+	cfg    *config.HTTPRouterConfig
 	logger log.Logger
 	calls  call.Recorder
 
@@ -26,7 +27,7 @@ type Router struct {
 }
 
 func NewRouter(
-	cfg *Config,
+	cfg *config.HTTPRouterConfig,
 	logger log.Logger,
 	calls call.Recorder,
 ) *Router {

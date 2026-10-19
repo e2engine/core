@@ -487,7 +487,8 @@ func TestSummarizeCalls(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			store := call.NewStoreFactory(
 				&call.Config{
-					MaxCalls: 1000,
+					MaxCalls:         1000,
+					MaxRecordedBytes: 1024 * 1024,
 				}).New()
 
 			for _, actual := range tt.calls {
@@ -515,7 +516,8 @@ func TestSummarizeCallsDoesNotExposeCapturedData(
 ) {
 	store := call.NewStoreFactory(
 		&call.Config{
-			MaxCalls: 1000,
+			MaxCalls:         1000,
+			MaxRecordedBytes: 1024 * 1024,
 		}).New()
 
 	if errRecord := store.Record(call.Call{

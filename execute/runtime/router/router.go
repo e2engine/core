@@ -6,6 +6,7 @@ import (
 
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/execute/runtime"
+	"github.com/e2engine/core/execute/runtime/config"
 	grpcrouter "github.com/e2engine/core/execute/runtime/router/grpc"
 	httprouter "github.com/e2engine/core/execute/runtime/router/http"
 	"github.com/e2engine/core/model"
@@ -48,16 +49,11 @@ func (r *Router) Register(route *runtime.Route) {
 	}
 }
 
-type Config struct {
-	HTTP *httprouter.Config `json:"http" yaml:"http" default:"dive"`
-	GRPC *grpcrouter.Config `json:"grpc" yaml:"grpc" default:"dive"`
-}
-
 type Provider struct {
-	cfg *Config
+	cfg *config.RouterConfig
 }
 
-func NewProvider(cfg *Config) *Provider {
+func NewProvider(cfg *config.RouterConfig) *Provider {
 	return &Provider{
 		cfg: cfg,
 	}
