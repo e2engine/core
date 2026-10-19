@@ -3,6 +3,7 @@ package config
 import (
 	"time"
 
+	grpcservice "github.com/e2engine/core/execute/runtime/service/grpc"
 	httpservice "github.com/e2engine/core/execute/runtime/service/http"
 )
 
@@ -17,5 +18,7 @@ type Config struct {
 
 type ProviderConfig struct {
 	MockHTTP                 *httpservice.MockHTTPServiceConfig `json:"mock_http" yaml:"mock_http" default:"dive"`
+	MockGRPC                 *grpcservice.MockGRPCServiceConfig `json:"mock_grpc" yaml:"mock_grpc" default:"dive"`
+	RealGRPC                 *grpcservice.RealGRPCServiceConfig `json:"real_grpc" yaml:"real_grpc" default:"dive"`
 	BufDescriptorLoaderToken string                             `json:"buf_descriptor_loader_token,omitempty" yaml:"buf_descriptor_loader_token,omitempty" env:"BUF_DESCRIPTOR_LOADER_TOKEN"` // TODO: add validation.
 }

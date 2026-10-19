@@ -25,6 +25,7 @@ import (
 )
 
 type Router struct {
+	cfg    *Config
 	logger log.Logger
 	calls  call.Recorder
 
@@ -33,10 +34,12 @@ type Router struct {
 }
 
 func NewRouter(
+	cfg *Config,
 	logger log.Logger,
 	calls call.Recorder,
 ) *Router {
 	return &Router{
+		cfg:      cfg,
 		logger:   logger,
 		calls:    calls,
 		services: make(map[string]*runtime.Route),
@@ -126,6 +129,8 @@ func (r *Router) Mount(ctx context.Context) error {
 			),
 			grpcpkg.WithDefaultCallOptions(
 				grpcpkg.ForceCodec(rawCodec{}),
+				grpcpkg.MaxCallRecvMsgSize(r.cfg.MaxMessageSize),
+				grpcpkg.MaxCallSendMsgSize(r.cfg.MaxMessageSize),
 			),
 		)
 		if err != nil {
@@ -163,6 +168,8 @@ func (r *Router) Mount(ctx context.Context) error {
 
 		server := grpcpkg.NewServer(
 			grpcpkg.ForceServerCodec(rawCodec{}),
+			grpcpkg.MaxRecvMsgSize(r.cfg.MaxMessageSize),
+			grpcpkg.MaxSendMsgSize(r.cfg.MaxMessageSize),
 			grpcpkg.UnknownServiceHandler(handler),
 		)
 
@@ -262,6 +269,10 @@ func (r *Router) newHandler(
 					captureErr,
 				),
 			)
+
+			if status.Code(err) == codes.ResourceExhausted {
+				return err
+			}
 
 			return status.Error(
 				codes.Internal,

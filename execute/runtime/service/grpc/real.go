@@ -20,6 +20,7 @@ import (
 )
 
 type RealGRPCService struct {
+	cfg    *RealGRPCServiceConfig
 	logger log.Logger
 	spec   *model.ServiceSpec
 
@@ -31,11 +32,13 @@ type RealGRPCService struct {
 }
 
 func NewRealGRPCService(
+	cfg *RealGRPCServiceConfig,
 	logger log.Logger,
 	spec *model.ServiceSpec,
 	addressResolver addressResolver,
 ) (*RealGRPCService, error) {
 	return &RealGRPCService{
+		cfg: cfg,
 		logger: logger.With(
 			log.String(keys.EnvironmentServiceID, spec.ID),
 			log.String(keys.EnvironmentServiceKind, string(spec.Kind)),
@@ -64,6 +67,8 @@ func (s *RealGRPCService) Mount(ctx context.Context) error {
 		),
 		ggrpc.WithDefaultCallOptions(
 			ggrpc.ForceCodec(rawCodec{}),
+			ggrpc.MaxCallRecvMsgSize(s.cfg.MaxMessageSize),
+			ggrpc.MaxCallSendMsgSize(s.cfg.MaxMessageSize),
 		),
 	)
 	if err != nil {
@@ -86,9 +91,9 @@ func (s *RealGRPCService) Mount(ctx context.Context) error {
 
 	s.server = ggrpc.NewServer(
 		ggrpc.ForceServerCodec(rawCodec{}),
-		ggrpc.UnknownServiceHandler(
-			s.handle,
-		),
+		ggrpc.MaxRecvMsgSize(s.cfg.MaxMessageSize),
+		ggrpc.MaxSendMsgSize(s.cfg.MaxMessageSize),
+		ggrpc.UnknownServiceHandler(s.handle),
 	)
 
 	go func() {
@@ -188,18 +193,19 @@ func (s *RealGRPCService) handle(
 		ggrpc.Trailer(&responseTrailer),
 		ggrpc.ForceCodec(rawCodec{}),
 	)
-	if err != nil {
-		return err
-	}
 
 	if len(responseHeader) > 0 {
-		if err := stream.SendHeader(responseHeader); err != nil {
-			return err
+		if errSend := stream.SendHeader(responseHeader); errSend != nil {
+			return errSend
 		}
 	}
 
 	if len(responseTrailer) > 0 {
 		stream.SetTrailer(responseTrailer)
+	}
+
+	if err != nil {
+		return err
 	}
 
 	return stream.SendMsg(&response)
