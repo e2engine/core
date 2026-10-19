@@ -20,11 +20,11 @@ import (
 func TestNewProvider(t *testing.T) {
 	tests := []struct {
 		name string
-		cfg  *config.ProviderConfig
+		cfg  *config.ServiceConfig
 	}{
 		{
 			name: "config",
-			cfg: &config.ProviderConfig{
+			cfg: &config.ServiceConfig{
 				BufDescriptorLoaderToken: "token",
 			},
 		},
@@ -90,7 +90,7 @@ func TestProvider_GetService(t *testing.T) {
 		t.Fatalf("Unexpected NewSilentLogger error: %q", err)
 	}
 
-	cfg := &config.ProviderConfig{
+	cfg := &config.ServiceConfig{
 		MockHTTP: &httpservice.MockHTTPServiceConfig{
 			MaxRequestBodySize: 1048576,
 		},
@@ -144,7 +144,7 @@ func TestProvider_GetService_InvalidConfiguration(t *testing.T) {
 		},
 	}
 
-	cfg := &config.ProviderConfig{
+	cfg := &config.ServiceConfig{
 		MockHTTP: &httpservice.MockHTTPServiceConfig{
 			MaxRequestBodySize: 1048576,
 		},
@@ -202,7 +202,7 @@ func TestProvider_GetService_AddressResolver(t *testing.T) {
 		ResolveHTTPURL("http://gateway-host:9000").
 		Return(upstream.URL, nil)
 
-	cfg := &config.ProviderConfig{
+	cfg := &config.ServiceConfig{
 		MockHTTP: &httpservice.MockHTTPServiceConfig{
 			MaxRequestBodySize: 1048576,
 		},

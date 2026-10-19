@@ -7,25 +7,42 @@ import (
 )
 
 type Store struct {
-	mu            sync.RWMutex
-	calls         []Call
+	mu    sync.RWMutex
+	calls []Call
+
 	maxCalls      int
+	maxBytes      int64
+	recordedBytes int64
+
 	limitExceeded bool
 }
 
 var _ Recorder = (*Store)(nil)
 var _ Reader = (*Store)(nil)
 
-func (c *Store) Record(call Call) error {
+func (c *Store) Record(record Call) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.limitExceeded || len(c.calls) >= c.maxCalls {
+	if c.limitExceeded {
+		return errors.ErrCallStoreLimitExceeded
+	}
+
+	if len(c.calls) >= c.maxCalls {
 		c.limitExceeded = true
 		return errors.ErrCallStoreLimitExceeded
 	}
 
-	c.calls = append(c.calls, call)
+	size := record.Size()
+
+	if size > c.maxBytes-c.recordedBytes {
+		c.limitExceeded = true
+		return errors.ErrCallStoreLimitExceeded
+	}
+
+	c.calls = append(c.calls, record)
+	c.recordedBytes += size
+
 	return nil
 }
 
@@ -78,6 +95,7 @@ type factory struct {
 func (f *factory) New() *Store {
 	return &Store{
 		maxCalls: f.cfg.MaxCalls,
+		maxBytes: f.cfg.MaxRecordedBytes,
 	}
 }
 

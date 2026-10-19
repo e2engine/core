@@ -13,14 +13,14 @@ import (
 )
 
 type Provider struct {
-	cfg                *config.ProviderConfig
+	cfg                *config.ServiceConfig
 	logger             log.Logger
 	grpcMethodResolver grpcservice.MethodResolver
 	addressResolver    addressResolver
 }
 
 func NewProvider(
-	cfg *config.ProviderConfig,
+	cfg *config.ServiceConfig,
 	logger log.Logger,
 	addressResolver addressResolver,
 ) *Provider {

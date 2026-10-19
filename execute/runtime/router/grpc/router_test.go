@@ -15,6 +15,7 @@ import (
 
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/execute/runtime"
+	"github.com/e2engine/core/execute/runtime/config"
 	"github.com/e2engine/core/pkg/log"
 )
 
@@ -220,7 +221,8 @@ func TestRouter(t *testing.T) {
 
 	store := call.NewStoreFactory(
 		&call.Config{
-			MaxCalls: 1000,
+			MaxCalls:         1000,
+			MaxRecordedBytes: 1024 * 1024,
 		}).New()
 	router := newTestGRPCRouter(t, store)
 
@@ -478,7 +480,8 @@ func TestRouterMessageSizeLimit(t *testing.T) {
 
 			store := call.NewStoreFactory(
 				&call.Config{
-					MaxCalls: 1000,
+					MaxCalls:         1000,
+					MaxRecordedBytes: 1024 * 1024,
 				}).New()
 			router := newTestGRPCRouter(t, store)
 			router.cfg.MaxMessageSize = limit
@@ -619,7 +622,8 @@ func TestRouterUpstreamError(t *testing.T) {
 
 	store := call.NewStoreFactory(
 		&call.Config{
-			MaxCalls: 1000,
+			MaxCalls:         1000,
+			MaxRecordedBytes: 1024 * 1024,
 		}).New()
 	router := newTestGRPCRouter(t, store)
 
@@ -711,7 +715,8 @@ func TestRouterMountCancelledContext(t *testing.T) {
 		t,
 		call.NewStoreFactory(
 			&call.Config{
-				MaxCalls: 1000,
+				MaxCalls:         1000,
+				MaxRecordedBytes: 1024 * 1024,
 			}).New(),
 	)
 
@@ -735,7 +740,8 @@ func TestRouterUnmountCancelledContext(t *testing.T) {
 		t,
 		call.NewStoreFactory(
 			&call.Config{
-				MaxCalls: 1000,
+				MaxCalls:         1000,
+				MaxRecordedBytes: 1024 * 1024,
 			}).New(),
 	)
 
@@ -781,7 +787,8 @@ func TestRouterMultipleRoutes(t *testing.T) {
 		t,
 		call.NewStoreFactory(
 			&call.Config{
-				MaxCalls: 1000,
+				MaxCalls:         1000,
+				MaxRecordedBytes: 1024 * 1024,
 			}).New(),
 	)
 
@@ -879,7 +886,7 @@ func newTestGRPCRouter(
 	}
 
 	return NewRouter(
-		&Config{
+		&config.GRPCRouterConfig{
 			MaxMessageSize: 4 << 20,
 		},
 		logger,

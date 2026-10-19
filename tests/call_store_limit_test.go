@@ -14,10 +14,8 @@ import (
 	"github.com/e2engine/core/execute/address"
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/execute/runtime"
-	runtimeconfig "github.com/e2engine/core/execute/runtime/config"
+	"github.com/e2engine/core/execute/runtime/config"
 	"github.com/e2engine/core/execute/runtime/router"
-	grpcrouter "github.com/e2engine/core/execute/runtime/router/grpc"
-	httprouter "github.com/e2engine/core/execute/runtime/router/http"
 	"github.com/e2engine/core/execute/runtime/service"
 	"github.com/e2engine/core/execute/worker"
 	grpcworker "github.com/e2engine/core/execute/worker/grpc"
@@ -29,21 +27,42 @@ import (
 
 func TestCallStoreLimitPropagation(t *testing.T) {
 	tests := []struct {
-		name       string
-		maxCalls   int
-		wantStatus model.ExecutionStatus
-		wantError  bool
+		name              string
+		maxCalls          int
+		maxRecordedBytes  int64
+		wantRecordedCalls int
+		wantStatus        model.ExecutionStatus
+		wantError         bool
 	}{
 		{
-			name:       "at limit",
-			maxCalls:   2,
-			wantStatus: model.ExecutionStatusPassed,
+			name:              "below both limits",
+			maxCalls:          3,
+			maxRecordedBytes:  1 << 20,
+			wantRecordedCalls: 2,
+			wantStatus:        model.ExecutionStatusPassed,
 		},
 		{
-			name:       "limit exceeded",
-			maxCalls:   1,
-			wantStatus: model.ExecutionStatusError,
-			wantError:  true,
+			name:              "call count exactly at limit",
+			maxCalls:          2,
+			maxRecordedBytes:  1 << 20,
+			wantRecordedCalls: 2,
+			wantStatus:        model.ExecutionStatusPassed,
+		},
+		{
+			name:              "call count exceeded",
+			maxCalls:          1,
+			maxRecordedBytes:  1 << 20,
+			wantRecordedCalls: 1,
+			wantStatus:        model.ExecutionStatusError,
+			wantError:         true,
+		},
+		{
+			name:              "recorded bytes exceeded",
+			maxCalls:          3,
+			maxRecordedBytes:  1,
+			wantRecordedCalls: 0,
+			wantStatus:        model.ExecutionStatusError,
+			wantError:         true,
 		},
 	}
 
@@ -96,23 +115,23 @@ func TestCallStoreLimitPropagation(t *testing.T) {
 				},
 			}
 
-			runtimeCfg := &runtimeconfig.Config{
+			runtimeCfg := &config.Config{
 				E2EngineListenInterface:   "127.0.0.1",
 				EnvironmentCleanupTimeout: 5 * time.Second,
 			}
 
 			serviceProvider := service.NewProvider(
-				&runtimeconfig.ProviderConfig{},
+				&config.ServiceConfig{},
 				logger,
 				resolver,
 			)
 
 			routerProvider := router.NewProvider(
-				&router.Config{
-					HTTP: &httprouter.Config{
+				&config.RouterConfig{
+					HTTP: &config.HTTPRouterConfig{
 						MaxRecordedBodySize: 1 << 20,
 					},
-					GRPC: &grpcrouter.Config{
+					GRPC: &config.GRPCRouterConfig{
 						MaxMessageSize: 4 << 20,
 					},
 				},
@@ -120,7 +139,8 @@ func TestCallStoreLimitPropagation(t *testing.T) {
 
 			storeFactory := call.NewStoreFactory(
 				&call.Config{
-					MaxCalls: tt.maxCalls,
+					MaxCalls:         tt.maxCalls,
+					MaxRecordedBytes: tt.maxRecordedBytes,
 				},
 			)
 
@@ -293,11 +313,11 @@ func TestCallStoreLimitPropagation(t *testing.T) {
 				}
 			}
 
-			if got := len(instance.Calls.Get(call.Filter{})); got != tt.maxCalls {
+			if got := len(instance.Calls.Get(call.Filter{})); got != tt.wantRecordedCalls {
 				t.Errorf(
 					"recorded calls = %d, want %d",
 					got,
-					tt.maxCalls,
+					tt.wantRecordedCalls,
 				)
 			}
 

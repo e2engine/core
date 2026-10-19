@@ -14,6 +14,7 @@ import (
 
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/execute/runtime"
+	"github.com/e2engine/core/execute/runtime/config"
 	"github.com/e2engine/core/pkg/log"
 )
 
@@ -47,7 +48,8 @@ func TestRouter(t *testing.T) {
 
 	store := call.NewStoreFactory(
 		&call.Config{
-			MaxCalls: 1000,
+			MaxCalls:         1000,
+			MaxRecordedBytes: 1024 * 1024,
 		}).New()
 	router := newTestHTTPRouter(t, store)
 
@@ -238,7 +240,8 @@ func TestRouter(t *testing.T) {
 func TestRouterProxyError(t *testing.T) {
 	store := call.NewStoreFactory(
 		&call.Config{
-			MaxCalls: 1000,
+			MaxCalls:         1000,
+			MaxRecordedBytes: 1024 * 1024,
 		}).New()
 	router := newTestHTTPRouter(t, store)
 
@@ -330,7 +333,8 @@ func TestRouterProxyError(t *testing.T) {
 func TestRouterMountCancelledContext(t *testing.T) {
 	router := newTestHTTPRouter(t, call.NewStoreFactory(
 		&call.Config{
-			MaxCalls: 1000,
+			MaxCalls:         1000,
+			MaxRecordedBytes: 1024 * 1024,
 		}).New())
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -349,7 +353,8 @@ func TestRouterMountCancelledContext(t *testing.T) {
 func TestRouterUnmountCancelledContext(t *testing.T) {
 	router := newTestHTTPRouter(t, call.NewStoreFactory(
 		&call.Config{
-			MaxCalls: 1000,
+			MaxCalls:         1000,
+			MaxRecordedBytes: 1024 * 1024,
 		}).New())
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -370,7 +375,8 @@ func TestRouterMultipleRoutes(t *testing.T) {
 		t,
 		call.NewStoreFactory(
 			&call.Config{
-				MaxCalls: 1000,
+				MaxCalls:         1000,
+				MaxRecordedBytes: 1024 * 1024,
 			}).New(),
 	)
 
@@ -437,7 +443,8 @@ func TestRouterTruncatedBodyRecording(t *testing.T) {
 
 	store := call.NewStoreFactory(
 		&call.Config{
-			MaxCalls: 1000,
+			MaxCalls:         1000,
+			MaxRecordedBytes: 1024 * 1024,
 		}).New()
 	router := newTestHTTPRouter(t, store)
 	router.cfg.MaxRecordedBodySize = 5
@@ -554,7 +561,7 @@ func newTestHTTPRouter(
 		)
 	}
 
-	routerCfg := &Config{
+	routerCfg := &config.HTTPRouterConfig{
 		// Use a small buffer size for testing.
 		MaxRecordedBodySize: 1024,
 	}

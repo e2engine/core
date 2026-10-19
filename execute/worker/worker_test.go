@@ -654,7 +654,8 @@ func TestWorkerExecuteCallStoreLimitExceeded(t *testing.T) {
 
 	store := call.NewStoreFactory(
 		&call.Config{
-			MaxCalls: 1,
+			MaxCalls:         1,
+			MaxRecordedBytes: 1024 * 1024,
 		},
 	).New()
 

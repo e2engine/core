@@ -7,8 +7,7 @@ import (
 
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/execute/runtime"
-	grpcrouter "github.com/e2engine/core/execute/runtime/router/grpc"
-	httprouter "github.com/e2engine/core/execute/runtime/router/http"
+	"github.com/e2engine/core/execute/runtime/config"
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/pkg/log"
 )
@@ -134,11 +133,11 @@ func newTestRouter(t *testing.T) runtime.Router {
 		)
 	}
 
-	cfg := &Config{
-		HTTP: &httprouter.Config{
+	cfg := &config.RouterConfig{
+		HTTP: &config.HTTPRouterConfig{
 			MaxRecordedBodySize: 1024,
 		},
-		GRPC: &grpcrouter.Config{
+		GRPC: &config.GRPCRouterConfig{
 			MaxMessageSize: 1024,
 		},
 	}
@@ -147,7 +146,8 @@ func newTestRouter(t *testing.T) runtime.Router {
 		logger,
 		call.NewStoreFactory(
 			&call.Config{
-				MaxCalls: 1000,
+				MaxCalls:         1000,
+				MaxRecordedBytes: 1024 * 1024,
 			},
 		).New(),
 	)

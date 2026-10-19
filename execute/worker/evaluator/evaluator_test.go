@@ -41,7 +41,8 @@ func TestEvaluatorEvaluateCalls(t *testing.T) {
 
 	calls := call.NewStoreFactory(
 		&call.Config{
-			MaxCalls: 1000,
+			MaxCalls:         1000,
+			MaxRecordedBytes: 1024 * 1024,
 		}).New()
 
 	if errRecord := calls.Record(call.Call{
@@ -161,7 +162,8 @@ func TestEvaluatorEvaluateActualCalls(t *testing.T) {
 
 	calls := call.NewStoreFactory(
 		&call.Config{
-			MaxCalls: 1000,
+			MaxCalls:         1000,
+			MaxRecordedBytes: 1024 * 1024,
 		}).New()
 
 	if errRecord := calls.Record(call.Call{
@@ -256,7 +258,8 @@ func TestEvaluatorEvaluateActualCallsNoDeviation(
 
 	calls := call.NewStoreFactory(
 		&call.Config{
-			MaxCalls: 1000,
+			MaxCalls:         1000,
+			MaxRecordedBytes: 1024 * 1024,
 		}).New()
 
 	if errRecord := calls.Record(call.Call{
@@ -295,7 +298,8 @@ func TestEvaluatorEvaluateActualCallsUnsupportedServiceKind(
 
 	calls := call.NewStoreFactory(
 		&call.Config{
-			MaxCalls: 1000,
+			MaxCalls:         1000,
+			MaxRecordedBytes: 1024 * 1024,
 		}).New()
 
 	if errRecord := calls.Record(call.Call{
@@ -430,7 +434,8 @@ func TestEvaluatorEvaluateExpectedCalls(t *testing.T) {
 
 			calls := call.NewStoreFactory(
 				&call.Config{
-					MaxCalls: 1000,
+					MaxCalls:         1000,
+					MaxRecordedBytes: 1024 * 1024,
 				}).New()
 
 			for range tt.calls {
@@ -497,7 +502,8 @@ func TestEvaluatorEvaluateExpectedCallsError(
 
 	calls := call.NewStoreFactory(
 		&call.Config{
-			MaxCalls: 1000,
+			MaxCalls:         1000,
+			MaxRecordedBytes: 1024 * 1024,
 		}).New()
 
 	if errRecord := calls.Record(call.Call{
@@ -700,7 +706,8 @@ func TestEvaluatorEvaluateCallsTruncatedHTTPBody(t *testing.T) {
 
 	calls := call.NewStoreFactory(
 		&call.Config{
-			MaxCalls: 1000,
+			MaxCalls:         1000,
+			MaxRecordedBytes: 1024 * 1024,
 		}).New()
 
 	if errRecord := calls.Record(call.Call{
