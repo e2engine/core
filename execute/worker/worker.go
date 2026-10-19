@@ -42,6 +42,7 @@ func NewWorker(
 	addressResolver addressResolver,
 ) *Worker {
 	client := http.DefaultClient // TODO: make it configurable.
+	// TODO: configure redirects handling.
 
 	return &Worker{
 		cfg:    cfg,

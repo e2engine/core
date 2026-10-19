@@ -30,9 +30,14 @@ type RouterConfig struct {
 }
 
 type HTTPRouterConfig struct {
-	MaxRecordedBodySize int64 `json:"max_recorded_body_size" yaml:"max_recorded_body_size" default:"1048576" validate:"min(1),max(67108864)"`
+	MaxRecordedBodySize int64 `json:"max_recorded_body_size" yaml:"max_recorded_body_size" env:"MAX_RECORDED_BODY_SIZE" default:"1048576" validate:"min(1),max(67108864)"`
+
+	ReadHeaderTimeout time.Duration `json:"read_header_timeout" yaml:"read_header_timeout" env:"READ_HEADER_TIMEOUT" default:"5s" validate:"min(1s)"`
+	IdleTimeout       time.Duration `json:"idle_timeout" yaml:"idle_timeout" env:"IDLE_TIMEOUT" default:"60s" validate:"min(1s)"`
+
+	ResponseHeaderTimeout time.Duration `json:"response_header_timeout" yaml:"response_header_timeout" env:"RESPONSE_HEADER_TIMEOUT" default:"30s" validate:"min(1s)"`
 }
 
 type GRPCRouterConfig struct {
-	MaxMessageSize int `json:"max_message_size" yaml:"max_message_size" default:"4194304" validate:"min(1),max(67108864)"`
+	MaxMessageSize int `json:"max_message_size" yaml:"max_message_size" env:"MAX_MESSAGE_SIZE" default:"4194304" validate:"min(1),max(67108864)"`
 }

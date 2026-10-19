@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	e2enginehttp "github.com/e2engine/instrumentation-go/http"
 
@@ -547,6 +548,215 @@ func TestRouterTruncatedBodyRecording(t *testing.T) {
 	}
 }
 
+func TestRouterResponseHeaderTimeout(t *testing.T) {
+	upstreamEntered := make(chan struct{})
+
+	upstream := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			req *http.Request,
+		) {
+			close(upstreamEntered)
+
+			// Wait until the reverse proxy cancels the request
+			// because of the response-header timeout.
+			<-req.Context().Done()
+		}),
+	)
+	defer upstream.Close()
+
+	store := call.NewStoreFactory(
+		&call.Config{
+			MaxCalls:         10,
+			MaxRecordedBytes: 1 << 20,
+		},
+	).New()
+
+	router := newTestHTTPRouter(t, store)
+	router.cfg.ResponseHeaderTimeout = 50 * time.Millisecond
+
+	router.Register(&runtime.Route{
+		ServiceID:      "service-1",
+		ListenAddress:  "127.0.0.1:0",
+		RuntimeAddress: upstream.Listener.Addr().String(),
+	})
+
+	if err := router.Mount(t.Context()); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+
+	defer func() {
+		if err := router.Unmount(context.Background()); err != nil {
+			t.Errorf("Unmount() error = %v", err)
+		}
+	}()
+
+	address := router.mounted[0].listener.Addr().String()
+
+	req, err := http.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		"http://"+address+"/timeout",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Errorf(
+			"status = %d, want %d",
+			resp.StatusCode,
+			http.StatusBadGateway,
+		)
+	}
+
+	select {
+	case <-upstreamEntered:
+	default:
+		t.Error("upstream handler was not entered")
+	}
+}
+
+func TestRouterResponseHeaderTimeoutDoesNotLimitBody(t *testing.T) {
+	const delay = 150 * time.Millisecond
+
+	upstream := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			_ *http.Request,
+		) {
+			w.WriteHeader(http.StatusOK)
+
+			// Flush headers immediately so that the timeout
+			// applies only to receiving the initial headers.
+			w.(http.Flusher).Flush()
+
+			time.Sleep(delay)
+
+			if _, err := io.WriteString(w, "late body"); err != nil {
+				t.Errorf("Write() error = %v", err)
+			}
+		}),
+	)
+	defer upstream.Close()
+
+	store := call.NewStoreFactory(
+		&call.Config{
+			MaxCalls:         10,
+			MaxRecordedBytes: 1 << 20,
+		},
+	).New()
+
+	router := newTestHTTPRouter(t, store)
+	router.cfg.ResponseHeaderTimeout = 50 * time.Millisecond
+
+	router.Register(&runtime.Route{
+		ServiceID:      "service-1",
+		ListenAddress:  "127.0.0.1:0",
+		RuntimeAddress: upstream.Listener.Addr().String(),
+	})
+
+	if err := router.Mount(t.Context()); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+
+	defer func() {
+		if err := router.Unmount(context.Background()); err != nil {
+			t.Errorf("Unmount() error = %v", err)
+		}
+	}()
+
+	address := router.mounted[0].listener.Addr().String()
+
+	req, err := http.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		"http://"+address+"/slow-body",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf(
+			"status = %d, want %d",
+			resp.StatusCode,
+			http.StatusOK,
+		)
+	}
+
+	if string(body) != "late body" {
+		t.Errorf(
+			"body = %q, want %q",
+			body,
+			"late body",
+		)
+	}
+
+	calls := store.Get(call.Filter{
+		ServiceID: "service-1",
+	})
+
+	if len(calls) != 1 {
+		t.Fatalf(
+			"recorded calls = %d, want 1",
+			len(calls),
+		)
+	}
+
+	if calls[0].HTTP == nil {
+		t.Fatal("expected recorded HTTP call")
+	}
+
+	recorded := calls[0].HTTP.Response
+
+	if recorded.StatusCode != http.StatusOK {
+		t.Errorf(
+			"recorded status = %d, want %d",
+			recorded.StatusCode,
+			http.StatusOK,
+		)
+	}
+
+	if string(recorded.Body) != "late body" {
+		t.Errorf(
+			"recorded response body = %q, want %q",
+			recorded.Body,
+			"late body",
+		)
+	}
+
+	if recorded.BodyTruncated {
+		t.Error("recorded response body must not be truncated")
+	}
+
+	if err := store.Err(); err != nil {
+		t.Errorf(
+			"call store error = %v, want nil",
+			err,
+		)
+	}
+}
+
 func newTestHTTPRouter(
 	t *testing.T,
 	store *call.Store,
@@ -562,8 +772,10 @@ func newTestHTTPRouter(
 	}
 
 	routerCfg := &config.HTTPRouterConfig{
-		// Use a small buffer size for testing.
-		MaxRecordedBodySize: 1024,
+		MaxRecordedBodySize:   1024,
+		ReadHeaderTimeout:     5 * time.Second,
+		IdleTimeout:           60 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second,
 	}
 
 	return NewRouter(routerCfg, logger, store)

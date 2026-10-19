@@ -53,6 +53,7 @@ func (r *ProtoMethodResolver) ResolveMethod(
 	spec *model.GRPCProtoSpec,
 	method string,
 ) (protoreflect.MethodDescriptor, error) {
+	// TODO: verify that context cancellation is respected.
 	switch {
 	case spec.External != nil:
 		return r.resolveExternal(

@@ -50,9 +50,10 @@ func (r *Router) Register(route *runtime.Route) {
 }
 
 type mountedRoute struct {
-	route    *runtime.Route
-	listener net.Listener
-	server   *http.Server
+	route     *runtime.Route
+	listener  net.Listener
+	server    *http.Server
+	transport *http.Transport
 }
 
 func (r *Router) Mount(ctx context.Context) error {
@@ -72,6 +73,14 @@ func (r *Router) Mount(ctx context.Context) error {
 		}
 
 		proxy := httputil.NewSingleHostReverseProxy(target)
+
+		// Clone the default transport to preserve connection pooling,
+		// dial timeouts, keep-alive settings, and other defaults.
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+
+		transport.ResponseHeaderTimeout = r.cfg.ResponseHeaderTimeout
+
+		proxy.Transport = transport
 
 		proxy.ErrorHandler = func(
 			w http.ResponseWriter,
@@ -134,6 +143,8 @@ func (r *Router) Mount(ctx context.Context) error {
 			route.ListenAddress,
 		)
 		if err != nil {
+			transport.CloseIdleConnections()
+
 			return nativeerrors.Join(
 				err,
 				r.unmountMountedRoutes(ctx, mounted),
@@ -141,15 +152,19 @@ func (r *Router) Mount(ctx context.Context) error {
 		}
 
 		server := &http.Server{
-			Handler: handler,
+			Handler:           handler,
+			ReadHeaderTimeout: r.cfg.ReadHeaderTimeout,
+			IdleTimeout:       r.cfg.IdleTimeout,
+			MaxHeaderBytes:    1 << 20, // Go's existing default (1MiB)
 		}
 
 		mounted = append(
 			mounted,
 			mountedRoute{
-				route:    route,
-				listener: listener,
-				server:   server,
+				route:     route,
+				listener:  listener,
+				server:    server,
+				transport: transport,
 			},
 		)
 
@@ -210,6 +225,8 @@ func (r *Router) unmountMountedRoutes(
 
 			accErr = nativeerrors.Join(accErr, err)
 		}
+
+		route.transport.CloseIdleConnections()
 	}
 
 	return accErr
