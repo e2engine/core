@@ -128,6 +128,9 @@ func (r *Router) Mount(ctx context.Context) error {
 			grpcpkg.WithTransportCredentials(
 				insecure.NewCredentials(),
 			),
+			grpcpkg.WithMaxHeaderListSize(
+				r.cfg.MaxMetadataSize,
+			),
 			grpcpkg.WithDefaultCallOptions(
 				grpcpkg.ForceCodec(rawCodec{}),
 				grpcpkg.MaxCallRecvMsgSize(r.cfg.MaxMessageSize),
@@ -169,6 +172,9 @@ func (r *Router) Mount(ctx context.Context) error {
 
 		server := grpcpkg.NewServer(
 			grpcpkg.ForceServerCodec(rawCodec{}),
+			grpcpkg.MaxHeaderListSize(
+				r.cfg.MaxMetadataSize,
+			),
 			grpcpkg.MaxRecvMsgSize(r.cfg.MaxMessageSize),
 			grpcpkg.MaxSendMsgSize(r.cfg.MaxMessageSize),
 			grpcpkg.UnknownServiceHandler(handler),

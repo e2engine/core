@@ -4,6 +4,7 @@ import (
 	"context"
 	nativeerrors "errors"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -359,7 +360,8 @@ func TestRealGRPCServiceProxy(t *testing.T) {
 
 	service, err := NewRealGRPCService(
 		&RealGRPCServiceConfig{
-			MaxMessageSize: 4 << 20,
+			MaxMessageSize:  4 << 20,
+			MaxMetadataSize: 64 << 10,
 		},
 		logger,
 		&model.ServiceSpec{
@@ -600,7 +602,8 @@ func TestRealGRPCServiceProxyErrorMetadata(t *testing.T) {
 
 	service, err := NewRealGRPCService(
 		&RealGRPCServiceConfig{
-			MaxMessageSize: 4 << 20,
+			MaxMessageSize:  4 << 20,
+			MaxMetadataSize: 64 << 10,
 		},
 		logger,
 		&model.ServiceSpec{
@@ -789,7 +792,8 @@ func TestRealGRPCServiceMessageSizeLimit(t *testing.T) {
 
 			service, err := NewRealGRPCService(
 				&RealGRPCServiceConfig{
-					MaxMessageSize: limit,
+					MaxMessageSize:  limit,
+					MaxMetadataSize: 64 << 10,
 				},
 				logger,
 				&model.ServiceSpec{
@@ -857,6 +861,208 @@ func TestRealGRPCServiceMessageSizeLimit(t *testing.T) {
 						response,
 						tt.response,
 					)
+				}
+			}
+		})
+	}
+}
+
+func TestRealGRPCServiceMetadataSizeLimit(t *testing.T) {
+	const (
+		limit         uint32 = 1024
+		logicalTarget        = "gateway-host:9000"
+		fullMethod           = "/users.v1.UserService/GetUser"
+	)
+
+	tests := []struct {
+		name             string
+		requestMetadata  string
+		responseMetadata string
+		wantSuccess      bool
+		wantUpstream     bool
+	}{
+		{
+			name:             "within limit",
+			requestMetadata:  "small",
+			responseMetadata: "small",
+			wantSuccess:      true,
+			wantUpstream:     true,
+		},
+		{
+			name:            "request exceeds limit",
+			requestMetadata: strings.Repeat("a", 4096),
+		},
+		{
+			name:             "response exceeds limit",
+			requestMetadata:  "small",
+			responseMetadata: strings.Repeat("b", 4096),
+			wantUpstream:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			listener, err := (&net.ListenConfig{}).Listen(
+				t.Context(),
+				"tcp",
+				"127.0.0.1:0",
+			)
+			if err != nil {
+				t.Fatalf("Listen() error = %v", err)
+			}
+
+			upstreamCalled := make(chan struct{}, 1)
+
+			upstream := ggrpc.NewServer(
+				ggrpc.ForceServerCodec(rawCodec{}),
+				ggrpc.UnknownServiceHandler(
+					func(_ any, stream ggrpc.ServerStream) error {
+						var request rawMessage
+
+						if err := stream.RecvMsg(&request); err != nil {
+							return err
+						}
+
+						upstreamCalled <- struct{}{}
+
+						if err := stream.SendHeader(
+							metadata.Pairs(
+								"x-response",
+								tt.responseMetadata,
+							),
+						); err != nil {
+							return err
+						}
+
+						response := rawMessage("response payload")
+						return stream.SendMsg(&response)
+					},
+				),
+			)
+
+			go func() {
+				_ = upstream.Serve(listener)
+			}()
+			defer upstream.Stop()
+
+			ctrl := gomock.NewController(t)
+			resolver := NewMockaddressResolver(ctrl)
+
+			resolver.EXPECT().
+				ResolveGRPCTarget(logicalTarget).
+				Return(listener.Addr().String(), nil)
+
+			logger, err := log.NewSilentLogger()
+			if err != nil {
+				t.Fatalf("NewSilentLogger() error = %v", err)
+			}
+
+			service, err := NewRealGRPCService(
+				&RealGRPCServiceConfig{
+					MaxMessageSize:  4 << 20,
+					MaxMetadataSize: limit,
+				},
+				logger,
+				&model.ServiceSpec{
+					ID:     "upstream",
+					Target: logicalTarget,
+				},
+				resolver,
+			)
+			if err != nil {
+				t.Fatalf("NewRealGRPCService() error = %v", err)
+			}
+
+			if err := service.Mount(t.Context()); err != nil {
+				t.Fatalf("Mount() error = %v", err)
+			}
+
+			defer func() {
+				ctx, cancel := context.WithTimeout(
+					context.Background(),
+					5*time.Second,
+				)
+				defer cancel()
+
+				if err := service.Unmount(ctx); err != nil {
+					t.Errorf("Unmount() error = %v", err)
+				}
+			}()
+
+			connection, err := ggrpc.NewClient(
+				service.GetRuntimeAddress(),
+				ggrpc.WithTransportCredentials(
+					insecure.NewCredentials(),
+				),
+				ggrpc.WithDefaultCallOptions(
+					ggrpc.ForceCodec(rawCodec{}),
+				),
+			)
+			if err != nil {
+				t.Fatalf("NewClient() error = %v", err)
+			}
+			defer connection.Close()
+
+			ctx, cancel := context.WithTimeout(
+				t.Context(),
+				5*time.Second,
+			)
+			defer cancel()
+
+			ctx = metadata.NewOutgoingContext(
+				ctx,
+				metadata.Pairs(
+					"x-request",
+					tt.requestMetadata,
+				),
+			)
+
+			request := rawMessage("request payload")
+			var response rawMessage
+			var header metadata.MD
+
+			err = connection.Invoke(
+				ctx,
+				fullMethod,
+				&request,
+				&response,
+				ggrpc.Header(&header),
+			)
+
+			if tt.wantSuccess {
+				if err != nil {
+					t.Fatalf("Invoke() error = %v", err)
+				}
+
+				if string(response) != "response payload" {
+					t.Errorf(
+						"response = %q, want %q",
+						response,
+						"response payload",
+					)
+				}
+
+				values := header.Get("x-response")
+				if len(values) != 1 || values[0] != tt.responseMetadata {
+					t.Errorf(
+						"response metadata = %v, want [%s]",
+						values,
+						tt.responseMetadata,
+					)
+				}
+			} else if err == nil {
+				t.Fatal("expected metadata size limit error")
+			}
+
+			select {
+			case <-upstreamCalled:
+				if !tt.wantUpstream {
+					t.Error("upstream unexpectedly invoked")
+				}
+
+			default:
+				if tt.wantUpstream {
+					t.Error("upstream not invoked")
 				}
 			}
 		})

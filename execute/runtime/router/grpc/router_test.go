@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"testing"
 
 	e2enginegrpc "github.com/e2engine/instrumentation-go/grpc"
@@ -887,7 +888,8 @@ func newTestGRPCRouter(
 
 	return NewRouter(
 		&config.GRPCRouterConfig{
-			MaxMessageSize: 4 << 20,
+			MaxMessageSize:  4 << 20,
+			MaxMetadataSize: 64 << 10,
 		},
 		logger,
 		store,
@@ -972,6 +974,247 @@ func TestSplitFullMethod(t *testing.T) {
 					"expected method %q, got %q",
 					tt.expectedMethod,
 					method,
+				)
+			}
+		})
+	}
+}
+
+func TestRouterMetadataSizeLimit(t *testing.T) {
+	const limit uint32 = 1024
+
+	tests := []struct {
+		name          string
+		requestValue  string
+		responseValue string
+		wantOK        bool
+		wantUpstream  bool
+		wantRecorded  bool
+	}{
+		{
+			name:          "metadata within limit",
+			requestValue:  "small",
+			responseValue: "small",
+			wantOK:        true,
+			wantUpstream:  true,
+			wantRecorded:  true,
+		},
+		{
+			name:         "oversized request metadata",
+			requestValue: strings.Repeat("a", 4096),
+		},
+		{
+			name:          "oversized response metadata",
+			requestValue:  "small",
+			responseValue: strings.Repeat("b", 4096),
+			wantUpstream:  true,
+			wantRecorded:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upstreamCalled := make(chan struct{}, 1)
+
+			upstream := newTestGRPCServer(
+				t,
+				func(
+					_ any,
+					stream grpcpkg.ServerStream,
+				) error {
+					var request rawMessage
+
+					if err := stream.RecvMsg(&request); err != nil {
+						return err
+					}
+
+					upstreamCalled <- struct{}{}
+
+					if err := stream.SendHeader(
+						metadata.Pairs(
+							"x-response",
+							tt.responseValue,
+						),
+					); err != nil {
+						return err
+					}
+
+					response := rawMessage{4, 5, 6}
+
+					return stream.SendMsg(&response)
+				},
+			)
+			defer upstream.stop()
+
+			store := call.NewStoreFactory(
+				&call.Config{
+					MaxCalls:         10,
+					MaxRecordedBytes: 1 << 20,
+				},
+			).New()
+
+			router := newTestGRPCRouter(t, store)
+			router.cfg.MaxMetadataSize = limit
+
+			router.Register(&runtime.Route{
+				ServiceID:      "service-1",
+				ListenAddress:  "127.0.0.1:0",
+				RuntimeAddress: upstream.address(),
+			})
+
+			if err := router.Mount(t.Context()); err != nil {
+				t.Fatalf(
+					"Mount() error = %v",
+					err,
+				)
+			}
+
+			defer func() {
+				if err := router.Unmount(
+					context.Background(),
+				); err != nil {
+					t.Errorf(
+						"Unmount() error = %v",
+						err,
+					)
+				}
+			}()
+
+			connection, err := grpcpkg.NewClient(
+				router.mounted[0].listener.Addr().String(),
+				grpcpkg.WithTransportCredentials(
+					insecure.NewCredentials(),
+				),
+				grpcpkg.WithDefaultCallOptions(
+					grpcpkg.ForceCodec(rawCodec{}),
+				),
+			)
+			if err != nil {
+				t.Fatalf(
+					"NewClient() error = %v",
+					err,
+				)
+			}
+			defer connection.Close()
+
+			ctx := metadata.NewOutgoingContext(
+				t.Context(),
+				e2enginegrpc.WithTestExecutionID(
+					metadata.Pairs(
+						"x-request",
+						tt.requestValue,
+					),
+					"execution-1",
+				),
+			)
+
+			request := rawMessage{1, 2, 3}
+
+			var response rawMessage
+			var responseHeader metadata.MD
+
+			err = connection.Invoke(
+				ctx,
+				"/test.Service/Method",
+				&request,
+				&response,
+				grpcpkg.Header(&responseHeader),
+			)
+
+			if tt.wantOK {
+				if err != nil {
+					t.Fatalf(
+						"Invoke() error = %v",
+						err,
+					)
+				}
+
+				if string(response) != string([]byte{4, 5, 6}) {
+					t.Errorf(
+						"response = %v, want [4 5 6]",
+						response,
+					)
+				}
+
+				values := responseHeader.Get("x-response")
+
+				if len(values) != 1 ||
+					values[0] != tt.responseValue {
+					t.Errorf(
+						"response metadata = %v, want [%s]",
+						values,
+						tt.responseValue,
+					)
+				}
+			} else if err == nil {
+				t.Fatal(
+					"expected metadata size limit error",
+				)
+			}
+
+			select {
+			case <-upstreamCalled:
+				if !tt.wantUpstream {
+					t.Error(
+						"unexpected upstream invocation",
+					)
+				}
+
+			default:
+				if tt.wantUpstream {
+					t.Error(
+						"upstream was not invoked",
+					)
+				}
+			}
+
+			calls := store.Get(call.Filter{
+				TestExecutionID: "execution-1",
+				ServiceID:       "service-1",
+			})
+
+			if tt.wantRecorded {
+				if len(calls) != 1 {
+					t.Fatalf(
+						"recorded calls = %d, want 1",
+						len(calls),
+					)
+				}
+
+				if calls[0].GRPC == nil {
+					t.Fatal(
+						"expected recorded gRPC call",
+					)
+				}
+
+				if tt.wantOK {
+					if calls[0].GRPC.Response.Status !=
+						codes.OK.String() {
+						t.Errorf(
+							"recorded status = %s, want %s",
+							calls[0].GRPC.Response.Status,
+							codes.OK,
+						)
+					}
+				} else {
+					if calls[0].GRPC.Response.Status ==
+						codes.OK.String() {
+						t.Error(
+							"expected recorded non-OK status",
+						)
+					}
+				}
+			} else if len(calls) != 0 {
+				t.Errorf(
+					"recorded calls = %d, want 0",
+					len(calls),
+				)
+			}
+
+			if err := store.Err(); err != nil {
+				t.Errorf(
+					"call store error = %v, want nil",
+					err,
 				)
 			}
 		})

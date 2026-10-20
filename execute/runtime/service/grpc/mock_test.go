@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	nativeerrors "errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -1162,7 +1163,8 @@ func TestMockGRPCServiceHandle(t *testing.T) {
 
 	service := &MockGRPCService{
 		cfg: &MockGRPCServiceConfig{
-			MaxMessageSize: 4 << 20,
+			MaxMessageSize:  4 << 20,
+			MaxMetadataSize: 64 << 10,
 		},
 		logger: logger,
 		spec: &model.ServiceSpec{
@@ -1369,7 +1371,8 @@ func TestMockGRPCServiceMessageSizeLimit(t *testing.T) {
 
 			service := &MockGRPCService{
 				cfg: &MockGRPCServiceConfig{
-					MaxMessageSize: tt.limit,
+					MaxMessageSize:  tt.limit,
+					MaxMetadataSize: 64 << 10,
 				},
 				logger: logger,
 				spec: &model.ServiceSpec{
@@ -1454,6 +1457,138 @@ func TestMockGRPCServiceMessageSizeLimit(t *testing.T) {
 						tt.responseName,
 					)
 				}
+			}
+		})
+	}
+}
+
+func TestMockGRPCServiceMetadataSizeLimit(t *testing.T) {
+	method := testMethodDescriptor(t)
+
+	tests := []struct {
+		name      string
+		metadata  string
+		wantError bool
+	}{
+		{
+			name:     "metadata within limit",
+			metadata: "small",
+		},
+		{
+			name:      "metadata exceeds limit",
+			metadata:  strings.Repeat("a", 4096),
+			wantError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger, err := log.NewSilentLogger()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			service := &MockGRPCService{
+				cfg: &MockGRPCServiceConfig{
+					MaxMessageSize:  4 << 20,
+					MaxMetadataSize: 1024,
+				},
+				logger: logger,
+				spec: &model.ServiceSpec{
+					Proto: &model.GRPCProtoSpec{},
+				},
+				fixtures: []Fixture{
+					{
+						service: "users.v1.UserService",
+						method:  "GetUser",
+						status:  codes.OK,
+						response: map[string]any{
+							"name": "matched",
+						},
+					},
+				},
+				resolver: &testMethodResolver{
+					method: method,
+				},
+			}
+
+			if err := service.Mount(t.Context()); err != nil {
+				t.Fatalf("Mount() error = %v", err)
+			}
+
+			defer func() {
+				ctx, cancel := context.WithTimeout(
+					context.Background(),
+					5*time.Second,
+				)
+				defer cancel()
+
+				if err := service.Unmount(ctx); err != nil {
+					t.Errorf(
+						"Unmount() error = %v",
+						err,
+					)
+				}
+			}()
+
+			conn, err := grpc.NewClient(
+				service.GetRuntimeAddress(),
+				grpc.WithTransportCredentials(
+					insecure.NewCredentials(),
+				),
+			)
+			if err != nil {
+				t.Fatalf("NewClient() error = %v", err)
+			}
+			defer conn.Close()
+
+			ctx, cancel := context.WithTimeout(
+				t.Context(),
+				5*time.Second,
+			)
+			defer cancel()
+
+			ctx = metadata.NewOutgoingContext(
+				ctx,
+				metadata.Pairs(
+					"x-test",
+					tt.metadata,
+				),
+			)
+
+			request := dynamicpb.NewMessage(method.Input())
+			response := dynamicpb.NewMessage(method.Output())
+
+			err = conn.Invoke(
+				ctx,
+				"/users.v1.UserService/GetUser",
+				request,
+				response,
+			)
+
+			if tt.wantError {
+				if err == nil {
+					t.Fatal(
+						"Invoke() unexpectedly succeeded with oversized metadata",
+					)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("Invoke() error = %v", err)
+			}
+
+			name := method.Output().
+				Fields().
+				ByName("name")
+
+			if got := response.Get(name).String(); got != "matched" {
+				t.Errorf(
+					"response name = %q, want %q",
+					got,
+					"matched",
+				)
 			}
 		})
 	}
