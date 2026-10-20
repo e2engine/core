@@ -36,6 +36,8 @@ type HTTPRouterConfig struct {
 	IdleTimeout       time.Duration `json:"idle_timeout" yaml:"idle_timeout" env:"IDLE_TIMEOUT" default:"60s" validate:"min(1s)"`
 
 	ResponseHeaderTimeout time.Duration `json:"response_header_timeout" yaml:"response_header_timeout" env:"RESPONSE_HEADER_TIMEOUT" default:"30s" validate:"min(1s)"`
+
+	MaxResponseHeaderBytes int64 `json:"max_response_header_bytes" yaml:"max_response_header_bytes" env:"MAX_RESPONSE_HEADER_BYTES" default:"1048576" validate:"min(1024),max(16777216)"`
 }
 
 type GRPCRouterConfig struct {

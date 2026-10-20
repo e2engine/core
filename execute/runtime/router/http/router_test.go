@@ -352,22 +352,45 @@ func TestRouterMountCancelledContext(t *testing.T) {
 }
 
 func TestRouterUnmountCancelledContext(t *testing.T) {
-	router := newTestHTTPRouter(t, call.NewStoreFactory(
-		&call.Config{
-			MaxCalls:         1000,
-			MaxRecordedBytes: 1024 * 1024,
-		}).New())
+	store := call.NewStoreFactory(&call.Config{
+		MaxCalls:         10,
+		MaxRecordedBytes: 1 << 20,
+	}).New()
+
+	router := newTestHTTPRouter(t, store)
+
+	router.Register(&runtime.Route{
+		ServiceID:      "service-1",
+		ListenAddress:  "127.0.0.1:0",
+		RuntimeAddress: "127.0.0.1:1",
+	})
+
+	if err := router.Mount(t.Context()); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+
+	address := router.mounted[0].listener.Addr().String()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	err := router.Unmount(ctx)
 
-	if !errors.Is(err, context.Canceled) {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf(
-			"expected context.Canceled, got %v",
+			"Unmount() unexpected error = %v",
 			err,
 		)
+	}
+
+	if router.mounted != nil {
+		t.Fatal("expected mounted routes to be cleared")
+	}
+
+	conn, err := net.DialTimeout("tcp", address, time.Second)
+	if err == nil {
+		_ = conn.Close()
+		t.Fatal("listener still accepts connections after unmount")
 	}
 }
 
@@ -757,6 +780,209 @@ func TestRouterResponseHeaderTimeoutDoesNotLimitBody(t *testing.T) {
 	}
 }
 
+func TestRouterMaxResponseHeaderBytes(t *testing.T) {
+	upstream := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			_ *http.Request,
+		) {
+			w.Header().Set(
+				"X-Large-Header",
+				strings.Repeat("a", 4096),
+			)
+			w.WriteHeader(http.StatusOK)
+		}),
+	)
+	defer upstream.Close()
+
+	store := call.NewStoreFactory(&call.Config{
+		MaxCalls:         10,
+		MaxRecordedBytes: 1 << 20,
+	}).New()
+
+	router := newTestHTTPRouter(t, store)
+	router.cfg.MaxResponseHeaderBytes = 1024
+
+	router.Register(&runtime.Route{
+		ServiceID:      "service-1",
+		ListenAddress:  "127.0.0.1:0",
+		RuntimeAddress: upstream.Listener.Addr().String(),
+	})
+
+	if err := router.Mount(t.Context()); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+
+	defer func() {
+		if err := router.Unmount(context.Background()); err != nil {
+			t.Errorf("Unmount() error = %v", err)
+		}
+	}()
+
+	req, err := http.NewRequestWithContext(
+		t.Context(),
+		http.MethodGet,
+		"http://"+router.mounted[0].listener.Addr().String()+"/large-header",
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	req.Header = e2enginehttp.WithTestExecutionID(
+		req.Header,
+		"execution-1",
+	)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Do() error = %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadGateway {
+		t.Errorf(
+			"status = %d, want %d",
+			resp.StatusCode,
+			http.StatusBadGateway,
+		)
+	}
+
+	calls := store.Get(call.Filter{
+		TestExecutionID: "execution-1",
+		ServiceID:       "service-1",
+	})
+
+	if len(calls) != 1 {
+		t.Fatalf("recorded calls = %d, want 1", len(calls))
+	}
+
+	if calls[0].HTTP == nil {
+		t.Fatal("expected recorded HTTP call")
+	}
+
+	if got := calls[0].HTTP.Response.StatusCode; got != http.StatusBadGateway {
+		t.Errorf(
+			"recorded status = %d, want %d",
+			got,
+			http.StatusBadGateway,
+		)
+	}
+
+	if err := store.Err(); err != nil {
+		t.Errorf("store.Err() = %v, want nil", err)
+	}
+}
+
+func TestRouterUnmountClosesActiveRequest(t *testing.T) {
+	upstreamEntered := make(chan struct{})
+	upstreamCanceled := make(chan struct{})
+
+	upstream := httptest.NewServer(
+		http.HandlerFunc(func(
+			w http.ResponseWriter,
+			req *http.Request,
+		) {
+			close(upstreamEntered)
+
+			<-req.Context().Done()
+
+			close(upstreamCanceled)
+		}),
+	)
+	defer upstream.Close()
+
+	store := call.NewStoreFactory(&call.Config{
+		MaxCalls:         10,
+		MaxRecordedBytes: 1 << 20,
+	}).New()
+
+	router := newTestHTTPRouter(t, store)
+
+	router.Register(&runtime.Route{
+		ServiceID:      "service-1",
+		ListenAddress:  "127.0.0.1:0",
+		RuntimeAddress: upstream.Listener.Addr().String(),
+	})
+
+	if err := router.Mount(t.Context()); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+
+	address := router.mounted[0].listener.Addr().String()
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	requestDone := make(chan error, 1)
+
+	go func() {
+		req, err := http.NewRequestWithContext(
+			t.Context(),
+			http.MethodGet,
+			"http://"+address+"/blocked",
+			nil,
+		)
+		if err != nil {
+			requestDone <- err
+			return
+		}
+
+		resp, err := client.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+			requestDone <- errors.New(
+				"request unexpectedly succeeded",
+			)
+			return
+		}
+
+		requestDone <- err
+	}()
+
+	select {
+	case <-upstreamEntered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("request did not reach upstream")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := router.Unmount(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf(
+			"Unmount() error = %v, want context.Canceled",
+			err,
+		)
+	}
+
+	if router.mounted != nil {
+		t.Error("mounted routes not cleared")
+	}
+
+	if conn, err := net.DialTimeout(
+		"tcp",
+		address,
+		time.Second,
+	); err == nil {
+		_ = conn.Close()
+		t.Error("listener still accepts connections")
+	}
+
+	select {
+	case <-requestDone:
+	case <-time.After(5 * time.Second):
+		t.Error("active client request did not terminate")
+	}
+
+	select {
+	case <-upstreamCanceled:
+	case <-time.After(5 * time.Second):
+		t.Error("upstream request context was not canceled")
+	}
+}
+
 func newTestHTTPRouter(
 	t *testing.T,
 	store *call.Store,
@@ -772,10 +998,11 @@ func newTestHTTPRouter(
 	}
 
 	routerCfg := &config.HTTPRouterConfig{
-		MaxRecordedBodySize:   1024,
-		ReadHeaderTimeout:     5 * time.Second,
-		IdleTimeout:           60 * time.Second,
-		ResponseHeaderTimeout: 30 * time.Second,
+		MaxRecordedBodySize:    1024,
+		ReadHeaderTimeout:      5 * time.Second,
+		IdleTimeout:            60 * time.Second,
+		ResponseHeaderTimeout:  30 * time.Second,
+		MaxResponseHeaderBytes: 1 << 20,
 	}
 
 	return NewRouter(routerCfg, logger, store)
