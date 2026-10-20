@@ -3,10 +3,10 @@ package http
 import (
 	"io"
 	"net/http"
+	"slices"
 	"sync"
 
 	"github.com/e2engine/core/execute/call"
-	"github.com/e2engine/core/internal/util"
 )
 
 type requestCapturer struct {
@@ -43,7 +43,7 @@ func (c *requestCapturer) GetRequest() call.HTTPRequest {
 	if c.body != nil {
 		c.body.mu.Lock()
 
-		request.Body = util.CloneBytes(c.body.body)
+		request.Body = slices.Clone(c.body.body)
 		request.BodyTruncated = c.body.truncated
 		request.BodyComplete = c.body.complete
 

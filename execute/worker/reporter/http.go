@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/e2engine/core/internal/util"
@@ -138,7 +139,7 @@ func selectHeaders(
 	for k := range expected {
 		values := actual.Values(k)
 		if len(values) > 0 {
-			result[k] = util.CloneStringSlice(values)
+			result[k] = slices.Clone(values)
 		}
 	}
 
@@ -159,7 +160,7 @@ func (r *Reporter) redactHeaders(headers http.Header) http.Header {
 		if _, ok := r.redactedHeaders[strings.ToLower(k)]; ok {
 			out[k] = []string{redacted}
 		} else {
-			out[k] = util.CloneStringSlice(v)
+			out[k] = slices.Clone(v)
 		}
 	}
 

@@ -2,6 +2,8 @@ package call
 
 import (
 	nativeerrors "errors"
+	"net/http"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -759,4 +761,174 @@ func TestStoreCombinedLimits(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestStoreRecordOwnsSnapshot(t *testing.T) {
+	store := NewStoreFactory(&Config{
+		MaxCalls:         10,
+		MaxRecordedBytes: 1 << 20,
+	}).New()
+
+	original := ownershipTestCall()
+	want := original.Clone()
+	wantBytes := want.Size()
+
+	if err := store.Record(original); err != nil {
+		t.Fatalf("Record() error = %v", err)
+	}
+
+	// Modify the original after recording.
+	mutateOwnershipTestCall(&original)
+
+	got := store.Get(Filter{})
+	if len(got) != 1 {
+		t.Fatalf("Get() returned %d calls, want 1", len(got))
+	}
+
+	if !reflect.DeepEqual(got[0], want) {
+		t.Errorf(
+			"recorded call changed after input mutation: got %#v, want %#v",
+			got[0],
+			want,
+		)
+	}
+
+	if store.recordedBytes != wantBytes {
+		t.Errorf(
+			"recordedBytes = %d, want %d",
+			store.recordedBytes,
+			wantBytes,
+		)
+	}
+
+	if err := store.Err(); err != nil {
+		t.Errorf("Err() = %v, want nil", err)
+	}
+}
+
+func TestStoreGetReturnsIndependentSnapshots(t *testing.T) {
+	store := NewStoreFactory(&Config{
+		MaxCalls:         10,
+		MaxRecordedBytes: 1 << 20,
+	}).New()
+
+	original := ownershipTestCall()
+	want := original.Clone()
+	wantBytes := want.Size()
+
+	if err := store.Record(original); err != nil {
+		t.Fatalf("Record() error = %v", err)
+	}
+
+	first := store.Get(Filter{})
+	if len(first) != 1 {
+		t.Fatalf("first Get() returned %d calls, want 1", len(first))
+	}
+
+	// Modify the returned call.
+	mutateOwnershipTestCall(&first[0])
+
+	// A subsequent read must return the original data.
+	second := store.Get(Filter{})
+	if len(second) != 1 {
+		t.Fatalf("second Get() returned %d calls, want 1", len(second))
+	}
+
+	if !reflect.DeepEqual(second[0], want) {
+		t.Errorf(
+			"stored call changed after Get() result mutation: got %#v, want %#v",
+			second[0],
+			want,
+		)
+	}
+
+	if store.recordedBytes != wantBytes {
+		t.Errorf(
+			"recordedBytes = %d, want %d",
+			store.recordedBytes,
+			wantBytes,
+		)
+	}
+
+	if err := store.Err(); err != nil {
+		t.Errorf("Err() = %v, want nil", err)
+	}
+}
+
+func ownershipTestCall() Call {
+	return Call{
+		TestExecutionID:    "execution-1",
+		ServiceID:          "service-1",
+		MockFixtureMatched: true,
+
+		HTTP: &HTTPCall{
+			Request: HTTPRequest{
+				Method: "POST",
+				Path:   "/test",
+				Query: map[string][]string{
+					"q": {"original"},
+				},
+				Headers: http.Header{
+					"X-Request": {"original"},
+				},
+				Body:         []byte("request"),
+				BodyComplete: true,
+			},
+			Response: HTTPResponse{
+				StatusCode: http.StatusOK,
+				Headers: http.Header{
+					"X-Response": {"original"},
+				},
+				Body: []byte("response"),
+			},
+		},
+
+		GRPC: &GRPCCall{
+			Request: GRPCRequest{
+				Service: "service",
+				Method:  "Method",
+				Metadata: map[string][]string{
+					"request": {"original"},
+				},
+				Message: []byte("request"),
+			},
+			Response: GRPCResponse{
+				Status: "OK",
+				Metadata: map[string][]string{
+					"response": {"original"},
+				},
+				Message: []byte("response"),
+			},
+		},
+	}
+}
+
+func mutateOwnershipTestCall(c *Call) {
+	c.TestExecutionID = "modified-execution"
+	c.ServiceID = "modified-service"
+	c.MockFixtureMatched = false
+
+	// HTTP request.
+	c.HTTP.Request.Method = "GET"
+	c.HTTP.Request.Query["q"][0] = "modified"
+	c.HTTP.Request.Query["extra"] = []string{"added"}
+	c.HTTP.Request.Headers["X-Request"][0] = "modified"
+	c.HTTP.Request.Headers.Set("X-Extra", "added")
+	c.HTTP.Request.Body[0] = 'X'
+
+	// HTTP response.
+	c.HTTP.Response.StatusCode = http.StatusCreated
+	c.HTTP.Response.Headers["X-Response"][0] = "modified"
+	c.HTTP.Response.Body[0] = 'X'
+
+	// gRPC request.
+	c.GRPC.Request.Service = "modified-service"
+	c.GRPC.Request.Metadata["request"][0] = "modified"
+	c.GRPC.Request.Metadata["extra"] = []string{"added"}
+	c.GRPC.Request.Message[0] = 'X'
+
+	// gRPC response.
+	c.GRPC.Response.Status = "Internal"
+	c.GRPC.Response.Metadata["response"][0] = "modified"
+	c.GRPC.Response.Message[0] = 'X'
 }

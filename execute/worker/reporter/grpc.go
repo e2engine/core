@@ -1,6 +1,8 @@
 package reporter
 
 import (
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/e2engine/core/internal/util"
@@ -30,7 +32,7 @@ func (r *Reporter) AddGRPCRequest(req *model.GRPCRequest) {
 
 	if req.Message != nil {
 		if r.cfg.DumpPayload {
-			request.Message = util.CloneMap(req.Message)
+			request.Message = maps.Clone(req.Message)
 		} else {
 			request.Message = map[string]any{
 				dumpDisabled: nil,
@@ -94,7 +96,7 @@ func (r *Reporter) AddGRPCResponseMessage(message map[string]any) {
 	case !r.cfg.DumpPayload:
 		r.report.Summary.Response.GRPC.Message = map[string]any{dumpDisabled: nil}
 	default:
-		m := util.CloneMap(message)
+		m := maps.Clone(message)
 		r.report.Summary.Response.GRPC.Message = m
 	}
 }
@@ -115,7 +117,7 @@ func selectMetadata(
 	for key := range expected {
 		values, ok := actual[strings.ToLower(key)]
 		if ok {
-			result[key] = util.CloneStringSlice(values)
+			result[key] = slices.Clone(values)
 		}
 	}
 
@@ -139,7 +141,7 @@ func (r *Reporter) redactMetadata(
 		if _, ok := r.redactedMetadata[strings.ToLower(key)]; ok {
 			out[key] = []string{redacted}
 		} else {
-			out[key] = util.CloneStringSlice(values)
+			out[key] = slices.Clone(values)
 		}
 	}
 
