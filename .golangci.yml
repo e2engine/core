@@ -114,7 +114,7 @@ linters:
         linters:
           - lll
 
-      - path: ^execute/call/config\.go$
+      - path: ^execute/(call|worker)/config\.go$
         linters:
           - lll
 
