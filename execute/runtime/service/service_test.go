@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 
 	"go.uber.org/mock/gomock"
 
@@ -205,6 +206,10 @@ func TestProvider_GetService_AddressResolver(t *testing.T) {
 	cfg := &config.ServiceConfig{
 		MockHTTP: &httpservice.MockHTTPServiceConfig{
 			MaxRequestBodySize: 1048576,
+		},
+		RealHTTP: &httpservice.RealHTTPServiceConfig{
+			ResponseHeaderTimeout:  5 * time.Second,
+			MaxResponseHeaderBytes: 1048576,
 		},
 	}
 

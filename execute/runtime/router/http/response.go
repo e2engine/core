@@ -93,4 +93,7 @@ func (r *ResponseRecorder) Flush() {
 	}
 }
 
-// TODO: preserve http.Hijacker in ResponseRecorder.
+// TODO: support HTTP connection upgrades (http.Hijacker).
+// Hijacked connections require explicit lifecycle management because
+// http.Server.Shutdown and Close do not terminate them.
+// They also bypass the current request/response recording limits.

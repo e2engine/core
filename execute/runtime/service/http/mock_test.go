@@ -1,13 +1,17 @@
 package http_test
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	httpservice "github.com/e2engine/core/execute/runtime/service/http"
 	"github.com/e2engine/core/model"
@@ -975,7 +979,10 @@ func TestMockHTTPServiceRequestBodySizeLimit(t *testing.T) {
 			service := newTestMockHTTPServiceWithConfig(
 				t,
 				&httpservice.MockHTTPServiceConfig{
-					MaxRequestBodySize: limit,
+					MaxRequestBodySize:    limit,
+					ReadHeaderTimeout:     5 * time.Second,
+					IdleTimeout:           60 * time.Second,
+					MaxRequestHeaderBytes: 1 << 20,
 				},
 				[]model.FixtureSpec{fixture},
 			)
@@ -1022,6 +1029,203 @@ func TestMockHTTPServiceRequestBodySizeLimit(t *testing.T) {
 				t.Error("unexpected fixture mismatch header")
 			}
 		})
+	}
+}
+
+func TestMockHTTPServiceRequestHeaderSizeLimit(t *testing.T) {
+	service := newTestMockHTTPServiceWithConfig(
+		t,
+		&httpservice.MockHTTPServiceConfig{
+			MaxRequestBodySize:    1 << 20,
+			ReadHeaderTimeout:     5 * time.Second,
+			IdleTimeout:           60 * time.Second,
+			MaxRequestHeaderBytes: 1024,
+		},
+		[]model.FixtureSpec{
+			newHTTPFixture(
+				http.MethodGet,
+				"/test",
+				nil,
+				nil,
+				nil,
+				http.StatusOK,
+			),
+		},
+	)
+
+	if err := service.Mount(t.Context()); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+
+	t.Cleanup(func() {
+		if err := service.Unmount(context.Background()); err != nil {
+			t.Errorf("Unmount() error = %v", err)
+		}
+	})
+
+	tests := []struct {
+		name       string
+		header     string
+		wantStatus int
+	}{
+		{
+			name:       "within limit",
+			header:     "small",
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "exceeds limit",
+			header:     strings.Repeat("x", 16<<10),
+			wantStatus: http.StatusRequestHeaderFieldsTooLarge,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequestWithContext(
+				t.Context(),
+				http.MethodGet,
+				"http://"+service.GetRuntimeAddress()+"/test",
+				nil,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			req.Header.Set("X-Test", tt.header)
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("Do() error = %v", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != tt.wantStatus {
+				t.Errorf(
+					"status = %d, want %d",
+					resp.StatusCode,
+					tt.wantStatus,
+				)
+			}
+		})
+	}
+}
+
+func TestMockHTTPServiceUnmountClosesActiveRequest(t *testing.T) {
+	service := newTestMockHTTPService(
+		t,
+		[]model.FixtureSpec{
+			newHTTPFixture(
+				http.MethodPost,
+				"/test",
+				nil,
+				nil,
+				nil,
+				http.StatusOK,
+			),
+		},
+	)
+
+	if err := service.Mount(t.Context()); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+
+	defer func() {
+		_ = service.Unmount(context.Background())
+	}()
+
+	conn, err := net.DialTimeout(
+		"tcp",
+		service.GetRuntimeAddress(),
+		5*time.Second,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	if err := conn.SetDeadline(
+		time.Now().Add(5 * time.Second),
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = fmt.Fprintf(
+		conn,
+		"POST /test HTTP/1.1\r\n"+
+			"Host: %s\r\n"+
+			"Content-Length: 100\r\n"+
+			"Expect: 100-continue\r\n"+
+			"\r\n",
+		service.GetRuntimeAddress(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reader := bufio.NewReader(conn)
+
+	// The server sends 100 Continue when the mock handler
+	// begins reading the request body.
+	interim, err := http.ReadResponse(
+		reader,
+		&http.Request{
+			Method: http.MethodPost,
+		},
+	)
+	if err != nil {
+		t.Fatalf("ReadResponse() error = %v", err)
+	}
+	defer interim.Body.Close()
+
+	if interim.StatusCode != http.StatusContinue {
+		t.Fatalf(
+			"status = %d, want %d",
+			interim.StatusCode,
+			http.StatusContinue,
+		)
+	}
+
+	// The request body remains incomplete.
+	// Graceful shutdown cannot finish while the handler
+	// is waiting for the remaining bytes.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err = service.Unmount(ctx)
+
+	if err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf(
+			"Unmount() unexpected error = %v",
+			err,
+		)
+	}
+
+	// Forced shutdown must terminate the active connection.
+	_, err = reader.ReadByte()
+
+	if err == nil {
+		t.Error(
+			"active connection remained readable after shutdown",
+		)
+	} else if ne, ok := err.(net.Error); ok && ne.Timeout() {
+		t.Errorf(
+			"active connection was not closed: %v",
+			err,
+		)
+	}
+
+	// The listener must also be closed.
+	newConn, err := net.DialTimeout(
+		"tcp",
+		service.GetRuntimeAddress(),
+		time.Second,
+	)
+	if err == nil {
+		_ = newConn.Close()
+		t.Error(
+			"listener still accepts connections after unmount",
+		)
 	}
 }
 
@@ -1085,7 +1289,10 @@ func newTestMockHTTPService(
 	return newTestMockHTTPServiceWithConfig(
 		t,
 		&httpservice.MockHTTPServiceConfig{
-			MaxRequestBodySize: 1048576,
+			MaxRequestBodySize:    1048576,
+			ReadHeaderTimeout:     5 * time.Second,
+			IdleTimeout:           60 * time.Second,
+			MaxRequestHeaderBytes: 1 << 20,
 		},
 		fixtures,
 	)

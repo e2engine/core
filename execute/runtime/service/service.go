@@ -62,6 +62,7 @@ func (p *Provider) GetService(
 	case spec.Kind == model.ServiceKindHTTP &&
 		spec.Mode == model.ServiceModeReal:
 		return httpservice.NewRealHTTPService(
+			p.cfg.RealHTTP,
 			p.logger,
 			spec,
 			p.addressResolver,

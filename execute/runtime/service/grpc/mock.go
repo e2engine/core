@@ -189,7 +189,7 @@ func (s *MockGRPCService) handle(
 	if err != nil {
 		return status.Error(
 			codes.Unimplemented,
-			err.Error(),
+			"cannot resolve gRPC method",
 		)
 	}
 
@@ -221,7 +221,7 @@ func (s *MockGRPCService) handle(
 	if err != nil {
 		return status.Error(
 			codes.Internal,
-			err.Error(),
+			"failed to match gRPC request",
 		)
 	}
 
@@ -268,9 +268,15 @@ func (s *MockGRPCService) handle(
 		fixture.response,
 	)
 	if err != nil {
+		s.logger.Error(
+			"Failed to build gRPC mock response",
+			log.String(keys.GRPCMethod, fullMethod),
+		)
+		// TODO: log more information from the error.
+
 		return status.Error(
 			codes.Internal,
-			err.Error(),
+			"failed to build gRPC response",
 		)
 	}
 

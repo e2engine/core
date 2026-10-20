@@ -86,14 +86,12 @@ func (r *Router) Mount(ctx context.Context) error {
 		proxy.ErrorHandler = func(
 			w http.ResponseWriter,
 			req *http.Request,
-			proxyErr error,
+			_ error,
 		) {
 			r.logger.Error(
 				"Failed to proxy environment request",
 				log.String(keys.EnvironmentServiceID, route.ServiceID),
 				log.String(keys.RequestMethod, req.Method),
-				log.String(keys.RequestURLPath, req.URL.Path),
-				log.Err(keys.Cause, proxyErr),
 			)
 
 			http.Error(
@@ -111,7 +109,6 @@ func (r *Router) Mount(ctx context.Context) error {
 				"Routing environment request",
 				log.String(keys.EnvironmentServiceID, route.ServiceID),
 				log.String(keys.RequestMethod, req.Method),
-				log.String(keys.RequestURLPath, req.URL.Path),
 			)
 
 			request := newRequestCapturer(req, r.cfg.MaxRecordedBodySize)
@@ -131,7 +128,6 @@ func (r *Router) Mount(ctx context.Context) error {
 					"Failed to record environment HTTP call",
 					log.String(keys.EnvironmentServiceID, route.ServiceID),
 					log.String(keys.RequestMethod, req.Method),
-					log.String(keys.RequestURLPath, req.URL.Path),
 					log.Err(keys.Cause, errRecord),
 				)
 			}

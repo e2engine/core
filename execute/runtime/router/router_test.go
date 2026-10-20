@@ -45,16 +45,41 @@ func TestRouterMountCancelledContext(t *testing.T) {
 func TestRouterUnmountCancelledContext(t *testing.T) {
 	r := newTestRouter(t)
 
+	r.Register(&runtime.Route{
+		ServiceID:      "http-service",
+		Kind:           model.ServiceKindHTTP,
+		ListenAddress:  "127.0.0.1:0",
+		RuntimeAddress: "127.0.0.1:10001",
+	})
+
+	r.Register(&runtime.Route{
+		ServiceID:      "grpc-service",
+		Kind:           model.ServiceKindGRPC,
+		ListenAddress:  "127.0.0.1:0",
+		RuntimeAddress: "127.0.0.1:10002",
+	})
+
+	if err := r.Mount(context.Background()); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	err := r.Unmount(ctx)
+	if err := r.Unmount(ctx); err != nil &&
+		!errors.Is(err, context.Canceled) {
+		t.Fatalf("Unmount() unexpected error = %v", err)
+	}
 
-	if !errors.Is(err, context.Canceled) {
+	if err := r.Mount(context.Background()); err != nil {
 		t.Fatalf(
-			"expected context.Canceled, got %v",
+			"Mount() after canceled Unmount() error = %v",
 			err,
 		)
+	}
+
+	if err := r.Unmount(context.Background()); err != nil {
+		t.Fatalf("final Unmount() error = %v", err)
 	}
 }
 
