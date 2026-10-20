@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"net/http"
-	"time"
 
 	"github.com/ygrebnov/errorc"
 
@@ -28,21 +27,32 @@ type Worker struct {
 	addressResolver    addressResolver
 }
 
-type Config struct {
-	TestTimeout   time.Duration               `json:"test_timeout" yaml:"test_timeout" default:"30s" validate:"min(1s)"`
-	HTTPEvaluator *httpworker.EvaluatorConfig `json:"http_evaluator" yaml:"http_evaluator" default:"dive"`
-	GRPCExecutor  *grpcworker.ExecutorConfig  `json:"grpc_executor" yaml:"grpc_executor" default:"dive"`
-	Reporter      *reporterPkg.Config         `json:"reporter" yaml:"reporter"`
-}
-
 func NewWorker(
 	cfg *Config,
 	logger log.Logger,
 	grpcMethodResolver grpcservice.MethodResolver,
 	addressResolver addressResolver,
 ) *Worker {
-	client := http.DefaultClient // TODO: make it configurable.
-	// TODO: configure redirects handling.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+
+	transport.MaxResponseHeaderBytes = cfg.HTTPMaxResponseHeaderBytes
+
+	client := &http.Client{
+		Transport: transport,
+
+		CheckRedirect: func(
+			_ *http.Request,
+			via []*http.Request,
+		) error {
+			if len(via) > cfg.HTTPMaxRedirects {
+				return http.ErrUseLastResponse
+			}
+
+			// TODO: add outbound network restrictions.
+
+			return nil
+		},
+	}
 
 	return &Worker{
 		cfg:    cfg,

@@ -16,6 +16,7 @@ import (
 	httpworker "github.com/e2engine/core/execute/worker/http"
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/pkg/errors"
+	"github.com/e2engine/core/pkg/log"
 )
 
 func TestValidateExpectedCalls(t *testing.T) {
@@ -730,5 +731,192 @@ func TestWorkerExecuteCallStoreLimitExceeded(t *testing.T) {
 
 	if result.FinishedAt.IsZero() {
 		t.Error("expected FinishedAt")
+	}
+}
+
+func TestWorkerHTTPRedirectLimit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, req *http.Request) {
+			switch req.URL.Path {
+			case "/start":
+				http.Redirect(
+					w,
+					req,
+					"/first",
+					http.StatusFound,
+				)
+
+			case "/first":
+				http.Redirect(
+					w,
+					req,
+					"/second",
+					http.StatusFound,
+				)
+
+			case "/second":
+				w.WriteHeader(http.StatusOK)
+
+			default:
+				http.NotFound(w, req)
+			}
+		},
+	))
+	defer server.Close()
+
+	tests := []struct {
+		name         string
+		maxRedirects int
+		wantStatus   int
+	}{
+		{
+			name:         "redirects disabled",
+			maxRedirects: 0,
+			wantStatus:   http.StatusFound,
+		},
+		{
+			name:         "one redirect allowed",
+			maxRedirects: 1,
+			wantStatus:   http.StatusFound,
+		},
+		{
+			name:         "two redirects allowed",
+			maxRedirects: 2,
+			wantStatus:   http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger, err := log.NewSilentLogger()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			worker := NewWorker(
+				&Config{
+					TestTimeout:                5 * time.Second,
+					HTTPMaxRedirects:           tt.maxRedirects,
+					HTTPMaxResponseHeaderBytes: 1 << 20,
+					HTTPEvaluator: &httpworker.EvaluatorConfig{
+						MaxResponseBodySize: 1 << 20,
+					},
+				},
+				logger,
+				nil,
+				newTestAddressResolver(t),
+			)
+
+			job := newHTTPTestJob(
+				&call.Store{},
+				server.URL+"/start",
+				tt.wantStatus,
+			)
+
+			result, err := worker.Execute(
+				t.Context(),
+				job,
+			)
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+
+			if result.Status != model.ExecutionStatusPassed {
+				t.Errorf(
+					"status = %s, want %s (summary: %+v)",
+					result.Status,
+					model.ExecutionStatusPassed,
+					result.Summary,
+				)
+			}
+		})
+	}
+}
+
+func TestWorkerHTTPMaxResponseHeaderBytes(t *testing.T) {
+	const maxHeaders int64 = 1024
+
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, req *http.Request) {
+			if req.URL.Path == "/large" {
+				w.Header().Set(
+					"X-Large",
+					strings.Repeat("a", 4096),
+				)
+			} else {
+				w.Header().Set("X-Small", "ok")
+			}
+
+			w.WriteHeader(http.StatusOK)
+		},
+	))
+	defer server.Close()
+
+	tests := []struct {
+		name       string
+		path       string
+		wantStatus model.ExecutionStatus
+	}{
+		{
+			name:       "response headers within limit",
+			path:       "/small",
+			wantStatus: model.ExecutionStatusPassed,
+		},
+		{
+			name:       "response headers exceed limit",
+			path:       "/large",
+			wantStatus: model.ExecutionStatusError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logger, err := log.NewSilentLogger()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			worker := NewWorker(
+				&Config{
+					TestTimeout:                5 * time.Second,
+					HTTPMaxRedirects:           0,
+					HTTPMaxResponseHeaderBytes: maxHeaders,
+					HTTPEvaluator: &httpworker.EvaluatorConfig{
+						MaxResponseBodySize: 1 << 20,
+					},
+				},
+				logger,
+				nil,
+				newTestAddressResolver(t),
+			)
+
+			job := newHTTPTestJob(
+				&call.Store{},
+				server.URL+tt.path,
+				http.StatusOK,
+			)
+
+			result, err := worker.Execute(
+				t.Context(),
+				job,
+			)
+			if err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+
+			if result.Status != tt.wantStatus {
+				t.Errorf(
+					"status = %s, want %s (summary: %+v)",
+					result.Status,
+					tt.wantStatus,
+					result.Summary,
+				)
+			}
+
+			if tt.wantStatus == model.ExecutionStatusError &&
+				result.Summary.Error == "" {
+				t.Error("expected error summary")
+			}
+		})
 	}
 }
