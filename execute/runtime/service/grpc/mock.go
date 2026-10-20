@@ -108,6 +108,7 @@ func (s *MockGRPCService) Mount(
 	s.server = ggrpc.NewServer(
 		ggrpc.MaxRecvMsgSize(s.cfg.MaxMessageSize),
 		ggrpc.MaxSendMsgSize(s.cfg.MaxMessageSize),
+		ggrpc.MaxHeaderListSize(s.cfg.MaxMetadataSize),
 		ggrpc.UnknownServiceHandler(s.handle),
 	)
 

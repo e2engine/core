@@ -65,6 +65,7 @@ func (s *RealGRPCService) Mount(ctx context.Context) error {
 			insecure.NewCredentials(),
 			// TODO: preserve the logical hostname separately when introducing TLS support
 		),
+		ggrpc.WithMaxHeaderListSize(s.cfg.MaxMetadataSize),
 		ggrpc.WithDefaultCallOptions(
 			ggrpc.ForceCodec(rawCodec{}),
 			ggrpc.MaxCallRecvMsgSize(s.cfg.MaxMessageSize),
@@ -91,6 +92,7 @@ func (s *RealGRPCService) Mount(ctx context.Context) error {
 
 	s.server = ggrpc.NewServer(
 		ggrpc.ForceServerCodec(rawCodec{}),
+		ggrpc.MaxHeaderListSize(s.cfg.MaxMetadataSize),
 		ggrpc.MaxRecvMsgSize(s.cfg.MaxMessageSize),
 		ggrpc.MaxSendMsgSize(s.cfg.MaxMessageSize),
 		ggrpc.UnknownServiceHandler(s.handle),
