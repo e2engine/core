@@ -1,5 +1,11 @@
 package call
 
+import (
+	"slices"
+
+	"github.com/e2engine/core/internal/util"
+)
+
 type Recorder interface {
 	Record(call Call) error
 	Err() error
@@ -56,6 +62,38 @@ func (c Call) Size() int64 {
 	}
 
 	return size
+}
+
+// Clone returns an independent copy of the call and its mutable data.
+func (c Call) Clone() Call {
+	clone := c
+
+	if c.HTTP != nil {
+		httpCall := *c.HTTP
+
+		httpCall.Request.Query = util.CloneStringSliceMap(c.HTTP.Request.Query)
+		httpCall.Request.Headers = c.HTTP.Request.Headers.Clone()
+		httpCall.Request.Body = slices.Clone(c.HTTP.Request.Body)
+
+		httpCall.Response.Headers = c.HTTP.Response.Headers.Clone()
+		httpCall.Response.Body = slices.Clone(c.HTTP.Response.Body)
+
+		clone.HTTP = &httpCall
+	}
+
+	if c.GRPC != nil {
+		grpcCall := *c.GRPC
+
+		grpcCall.Request.Metadata = util.CloneStringSliceMap(c.GRPC.Request.Metadata)
+		grpcCall.Request.Message = slices.Clone(c.GRPC.Request.Message)
+
+		grpcCall.Response.Metadata = util.CloneStringSliceMap(c.GRPC.Response.Metadata)
+		grpcCall.Response.Message = slices.Clone(c.GRPC.Response.Message)
+
+		clone.GRPC = &grpcCall
+	}
+
+	return clone
 }
 
 func stringValuesSize(values map[string][]string) int64 {

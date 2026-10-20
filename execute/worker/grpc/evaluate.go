@@ -18,7 +18,6 @@ import (
 	"github.com/e2engine/core/execute/match"
 	servicegrpc "github.com/e2engine/core/execute/runtime/service/grpc"
 	"github.com/e2engine/core/execute/worker/evaluator"
-	"github.com/e2engine/core/internal/util"
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/pkg/keys"
 )
@@ -296,8 +295,7 @@ func mergeMetadata(
 	)
 
 	for key, values := range header {
-		result[key] =
-			util.CloneStringSlice(values)
+		result[key] = slices.Clone(values)
 	}
 
 	for key, values := range trailer {

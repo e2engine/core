@@ -2,9 +2,9 @@ package http
 
 import (
 	"net/http"
+	"slices"
 
 	"github.com/e2engine/core/execute/call"
-	"github.com/e2engine/core/internal/util"
 )
 
 type ResponseRecorder struct {
@@ -36,7 +36,7 @@ func (r *ResponseRecorder) WriteHeader(statusCode int) {
 	}
 
 	r.statusCode = statusCode
-	r.header = util.CloneHTTPHeader(r.w.Header())
+	r.header = r.w.Header().Clone()
 
 	r.w.WriteHeader(statusCode)
 }
@@ -77,8 +77,8 @@ func (r *ResponseRecorder) GetResponse() call.HTTPResponse {
 
 	return call.HTTPResponse{
 		StatusCode:    statusCode,
-		Headers:       util.CloneHTTPHeader(headers),
-		Body:          util.CloneBytes(r.body),
+		Headers:       headers.Clone(),
+		Body:          slices.Clone(r.body),
 		BodyTruncated: r.bodyTruncated,
 	}
 }
