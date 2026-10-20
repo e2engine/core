@@ -20,6 +20,7 @@ type Config struct {
 type ServiceConfig struct {
 	MockHTTP                 *httpservice.MockHTTPServiceConfig `json:"mock_http" yaml:"mock_http" default:"dive"`
 	MockGRPC                 *grpcservice.MockGRPCServiceConfig `json:"mock_grpc" yaml:"mock_grpc" default:"dive"`
+	RealHTTP                 *httpservice.RealHTTPServiceConfig `json:"real_http" yaml:"real_http" default:"dive"`
 	RealGRPC                 *grpcservice.RealGRPCServiceConfig `json:"real_grpc" yaml:"real_grpc" default:"dive"`
 	BufDescriptorLoaderToken string                             `json:"buf_descriptor_loader_token,omitempty" yaml:"buf_descriptor_loader_token,omitempty" env:"BUF_DESCRIPTOR_LOADER_TOKEN"` // TODO: add validation.
 }

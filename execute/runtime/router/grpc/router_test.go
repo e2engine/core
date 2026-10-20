@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"net"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	e2enginegrpc "github.com/e2engine/instrumentation-go/grpc"
 	grpcpkg "google.golang.org/grpc"
@@ -86,41 +88,6 @@ func TestRawCodec(t *testing.T) {
 	}
 }
 
-func TestCloneMetadata(t *testing.T) {
-	source := e2enginegrpc.WithTestExecutionID(
-		metadata.Pairs(
-			"x-test", "first",
-			"x-test", "second",
-		),
-		"execution-1",
-	)
-
-	got := cloneMetadata(source)
-
-	values := got["x-test"]
-	if len(values) != 2 ||
-		values[0] != "first" ||
-		values[1] != "second" {
-		t.Errorf(
-			"unexpected cloned metadata: %#v",
-			got,
-		)
-	}
-
-	if len(got) != 2 {
-		t.Fatalf(
-			"expected execution ID metadata to be present, got %#v",
-			got,
-		)
-	}
-
-	source["x-test"][0] = "changed"
-
-	if got["x-test"][0] != "first" {
-		t.Fatal("expected metadata values to be cloned")
-	}
-}
-
 func TestMergeMetadata(t *testing.T) {
 	header := metadata.Pairs(
 		"x-shared", "header",
@@ -159,21 +126,6 @@ func TestMergeMetadata(t *testing.T) {
 	}
 }
 
-func TestCloneBytes(t *testing.T) {
-	source := []byte{1, 2, 3}
-
-	got := cloneBytes(source)
-
-	source[0] = 9
-
-	if got[0] != 1 {
-		t.Fatalf(
-			"expected cloned bytes to be independent, got %v",
-			got,
-		)
-	}
-}
-
 func TestRouter(t *testing.T) {
 	var upstreamMetadata metadata.MD
 	var upstreamRequest rawMessage
@@ -190,7 +142,7 @@ func TestRouter(t *testing.T) {
 				return err
 			}
 
-			upstreamRequest = cloneBytes(request)
+			upstreamRequest = slices.Clone(request)
 
 			md, _ := metadata.FromIncomingContext(
 				stream.Context(),
@@ -737,27 +689,55 @@ func TestRouterMountCancelledContext(t *testing.T) {
 }
 
 func TestRouterUnmountCancelledContext(t *testing.T) {
+	upstream := newTestGRPCServer(
+		t,
+		func(_ any, stream grpcpkg.ServerStream) error {
+			return nil
+		},
+	)
+	defer upstream.stop()
+
 	router := newTestGRPCRouter(
 		t,
-		call.NewStoreFactory(
-			&call.Config{
-				MaxCalls:         1000,
-				MaxRecordedBytes: 1024 * 1024,
-			}).New(),
+		call.NewStoreFactory(&call.Config{
+			MaxCalls:         1000,
+			MaxRecordedBytes: 1024 * 1024,
+		}).New(),
 	)
 
-	ctx, cancel := context.WithCancel(
-		context.Background(),
-	)
+	router.Register(&runtime.Route{
+		ServiceID:      "service-1",
+		ListenAddress:  "127.0.0.1:0",
+		RuntimeAddress: upstream.address(),
+	})
+
+	if err := router.Mount(t.Context()); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+
+	address := router.mounted[0].listener.Addr().String()
+
+	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	err := router.Unmount(ctx)
 
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf(
-			"expected context.Canceled, got %v",
-			err,
-		)
+	if err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("Unmount() unexpected error = %v", err)
+	}
+
+	if router.mounted != nil {
+		t.Fatal("expected mounted routes to be cleared")
+	}
+
+	connection, err := net.DialTimeout(
+		"tcp",
+		address,
+		time.Second,
+	)
+	if err == nil {
+		_ = connection.Close()
+		t.Fatal("listener still accepts connections after unmount")
 	}
 }
 

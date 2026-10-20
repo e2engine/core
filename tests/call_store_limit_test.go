@@ -17,6 +17,7 @@ import (
 	"github.com/e2engine/core/execute/runtime/config"
 	"github.com/e2engine/core/execute/runtime/router"
 	"github.com/e2engine/core/execute/runtime/service"
+	httpservice "github.com/e2engine/core/execute/runtime/service/http"
 	"github.com/e2engine/core/execute/worker"
 	grpcworker "github.com/e2engine/core/execute/worker/grpc"
 	httpworker "github.com/e2engine/core/execute/worker/http"
@@ -121,7 +122,13 @@ func TestCallStoreLimitPropagation(t *testing.T) {
 			}
 
 			serviceProvider := service.NewProvider(
-				&config.ServiceConfig{},
+				&config.ServiceConfig{
+					RealHTTP: &httpservice.RealHTTPServiceConfig{
+						ReadHeaderTimeout:     5 * time.Second,
+						IdleTimeout:           30 * time.Second,
+						MaxRequestHeaderBytes: 1 << 20,
+					},
+				},
 				logger,
 				resolver,
 			)

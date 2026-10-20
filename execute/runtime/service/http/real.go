@@ -1,8 +1,10 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	nativeerrors "errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -18,21 +20,25 @@ import (
 //
 // ServiceSpec.Target is the actual address of the real service.
 type RealHTTPService struct {
+	cfg    *RealHTTPServiceConfig
 	logger log.Logger
 	spec   *model.ServiceSpec
 
 	addressResolver addressResolver
 
 	server         *http.Server
+	transport      *http.Transport
 	runtimeAddress string
 }
 
 func NewRealHTTPService(
+	cfg *RealHTTPServiceConfig,
 	logger log.Logger,
 	spec *model.ServiceSpec,
 	addressResolver addressResolver,
 ) (*RealHTTPService, error) {
 	return &RealHTTPService{
+		cfg: cfg,
 		logger: logger.With(
 			log.String(keys.EnvironmentServiceID, spec.ID),
 			log.String(keys.EnvironmentServiceKind, string(spec.Kind)),
@@ -58,7 +64,13 @@ func (s *RealHTTPService) Mount(ctx context.Context) error {
 		return err
 	}
 
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+
+	transport.ResponseHeaderTimeout = s.cfg.ResponseHeaderTimeout
+	transport.MaxResponseHeaderBytes = s.cfg.MaxResponseHeaderBytes
+
 	proxy := &httputil.ReverseProxy{
+		Transport: transport,
 		Rewrite: func(preq *httputil.ProxyRequest) {
 			// SetURL uses the resolved target hostname for the upstream Host header.
 			// Services using virtual-host routing may require the original logical
@@ -67,16 +79,10 @@ func (s *RealHTTPService) Mount(ctx context.Context) error {
 		},
 	}
 
-	proxy.ErrorHandler = func(
-		w http.ResponseWriter,
-		req *http.Request,
-		proxyErr error,
-	) {
+	proxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, _ error) {
 		s.logger.Error(
 			"Failed to proxy request to real service",
 			log.String(keys.RequestMethod, req.Method),
-			log.String(keys.RequestURLPath, req.URL.Path),
-			log.Err(keys.Cause, proxyErr),
 		)
 
 		http.Error(
@@ -86,6 +92,47 @@ func (s *RealHTTPService) Mount(ctx context.Context) error {
 		)
 	}
 
+	proxyHandler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		limit := s.cfg.MaxRequestBodySize
+
+		// Reject requests whose declared body size exceeds the limit.
+		if req.ContentLength > limit {
+			http.Error(
+				w,
+				http.StatusText(http.StatusRequestEntityTooLarge),
+				http.StatusRequestEntityTooLarge,
+			)
+			return
+		}
+
+		// Read at most limit+1 bytes so requests without a known
+		// Content-Length are also subject to the size limit.
+		body, errRead := io.ReadAll(io.LimitReader(req.Body, limit+1))
+		if errRead != nil {
+			http.Error(
+				w,
+				http.StatusText(http.StatusBadRequest),
+				http.StatusBadRequest,
+			)
+			return
+		}
+
+		if int64(len(body)) > limit {
+			http.Error(
+				w,
+				http.StatusText(http.StatusRequestEntityTooLarge),
+				http.StatusRequestEntityTooLarge,
+			)
+			return
+		}
+
+		// Restore the body for the reverse proxy.
+		req.Body = io.NopCloser(bytes.NewReader(body))
+		req.ContentLength = int64(len(body))
+
+		proxy.ServeHTTP(w, req)
+	})
+
 	listenerConfig := net.ListenConfig{}
 	listener, err := listenerConfig.Listen(
 		ctx,
@@ -93,13 +140,18 @@ func (s *RealHTTPService) Mount(ctx context.Context) error {
 		"127.0.0.1:0",
 	)
 	if err != nil {
+		transport.CloseIdleConnections()
 		return err
 	}
 
 	s.runtimeAddress = listener.Addr().String()
+	s.transport = transport
 
 	s.server = &http.Server{
-		Handler: proxy,
+		Handler:           proxyHandler,
+		ReadHeaderTimeout: s.cfg.ReadHeaderTimeout,
+		IdleTimeout:       s.cfg.IdleTimeout,
+		MaxHeaderBytes:    s.cfg.MaxRequestHeaderBytes,
 	}
 
 	go func() {
@@ -133,5 +185,17 @@ func (s *RealHTTPService) Unmount(ctx context.Context) error {
 		return nil
 	}
 
-	return s.server.Shutdown(ctx)
+	err := s.server.Shutdown(ctx)
+	if err != nil {
+		err = nativeerrors.Join(
+			err,
+			s.server.Close(),
+		)
+	}
+
+	if s.transport != nil {
+		s.transport.CloseIdleConnections()
+	}
+
+	return err
 }

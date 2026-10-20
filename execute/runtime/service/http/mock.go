@@ -63,7 +63,10 @@ func (s *MockHTTPService) Mount(ctx context.Context) error {
 	s.runtimeAddress = listener.Addr().String()
 
 	s.server = &http.Server{
-		Handler: s,
+		Handler:           s,
+		ReadHeaderTimeout: s.cfg.ReadHeaderTimeout,
+		IdleTimeout:       s.cfg.IdleTimeout,
+		MaxHeaderBytes:    s.cfg.MaxRequestHeaderBytes,
 	}
 
 	go func() {
@@ -96,7 +99,15 @@ func (s *MockHTTPService) Unmount(ctx context.Context) error {
 		return nil
 	}
 
-	return s.server.Shutdown(ctx)
+	err := s.server.Shutdown(ctx)
+	if err != nil {
+		return nativeerrors.Join(
+			err,
+			s.server.Close(),
+		)
+	}
+
+	return nil
 }
 
 func (s *MockHTTPService) ServeHTTP(
@@ -115,7 +126,7 @@ func (s *MockHTTPService) ServeHTTP(
 		}
 		http.Error(
 			w,
-			err.Error(),
+			http.StatusText(http.StatusBadRequest),
 			http.StatusBadRequest,
 		)
 		return
@@ -127,7 +138,6 @@ func (s *MockHTTPService) ServeHTTP(
 		s.logger.Debug(
 			"No fixture matched request",
 			log.String(keys.RequestMethod, r.Method),
-			log.String(keys.RequestURLPath, r.URL.Path),
 		)
 
 		http.Error(
@@ -154,7 +164,6 @@ func (s *MockHTTPService) match(
 		s.logger.Error(
 			errors.ErrFailedToReadRequestBody.Error(),
 			log.String(keys.RequestMethod, r.Method),
-			log.String(keys.RequestURLPath, r.URL.Path),
 			log.Err(keys.Cause, err),
 		)
 
@@ -271,15 +280,7 @@ func (s *MockHTTPService) respond(
 		if _, err := w.Write(body); err != nil {
 			s.logger.Error(
 				errors.ErrFailedToWriteResponseBody.Error(),
-				log.String(
-					keys.RequestMethod,
-					fixture.method,
-				),
-				log.String(
-					keys.RequestURLPath,
-					fixture.path,
-				),
-				log.Err(keys.Cause, err),
+				log.String(keys.RequestMethod, fixture.method),
 			)
 
 			return

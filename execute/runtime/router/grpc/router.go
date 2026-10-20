@@ -5,11 +5,11 @@ import (
 	nativeerrors "errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 
 	e2engine "github.com/e2engine/instrumentation-go"
 	e2enginegrpc "github.com/e2engine/instrumentation-go/grpc"
-	"github.com/ygrebnov/errorc"
 	grpcpkg "google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -20,6 +20,7 @@ import (
 	"github.com/e2engine/core/execute/call"
 	"github.com/e2engine/core/execute/runtime"
 	"github.com/e2engine/core/execute/runtime/config"
+	"github.com/e2engine/core/internal/util"
 	"github.com/e2engine/core/pkg/errors"
 	"github.com/e2engine/core/pkg/keys"
 	"github.com/e2engine/core/pkg/log"
@@ -249,32 +250,11 @@ func (r *Router) newHandler(
 		var request rawMessage
 
 		if err := stream.RecvMsg(&request); err != nil {
-			captureErr := errorc.With(
-				errors.ErrFailedToCaptureEnvironmentServiceCall,
-				errorc.String(
-					keys.EnvironmentServiceID,
-					route.ServiceID,
-				),
-				errorc.Error(
-					keys.Cause,
-					err,
-				),
-			)
-
 			r.logger.Error(
 				errors.ErrFailedToCaptureEnvironmentServiceCall.Error(),
-				log.String(
-					keys.EnvironmentServiceID,
-					route.ServiceID,
-				),
-				log.String(
-					keys.GRPCMethod,
-					fullMethod,
-				),
-				log.Err(
-					keys.Cause,
-					captureErr,
-				),
+				log.String(keys.EnvironmentServiceID, route.ServiceID),
+				log.String(keys.GRPCMethod, fullMethod),
+				log.String(keys.GRPCStatus, status.Code(err).String()),
 			)
 
 			if status.Code(err) == codes.ResourceExhausted {
@@ -325,10 +305,10 @@ func (r *Router) newHandler(
 					Request: call.GRPCRequest{
 						Service: service,
 						Method:  method,
-						Metadata: cloneMetadata(
+						Metadata: util.CloneStringSliceMap(
 							incomingMetadata,
 						),
-						Message: cloneBytes(
+						Message: slices.Clone(
 							request,
 						),
 					},
@@ -338,7 +318,7 @@ func (r *Router) newHandler(
 							responseHeader,
 							responseTrailer,
 						),
-						Message: cloneBytes(
+						Message: slices.Clone(
 							response,
 						),
 					},
@@ -384,22 +364,6 @@ func splitFullMethod(fullMethod string) (service, method string) {
 	return service, method
 }
 
-func cloneMetadata(source metadata.MD) map[string][]string {
-	result := make(
-		map[string][]string,
-		len(source),
-	)
-
-	for key, values := range source {
-		result[key] = append(
-			[]string(nil),
-			values...,
-		)
-	}
-
-	return result
-}
-
 func mergeMetadata(
 	sources ...metadata.MD,
 ) map[string][]string {
@@ -417,22 +381,9 @@ func mergeMetadata(
 	return result
 }
 
-func cloneBytes(
-	source []byte,
-) []byte {
-	return append(
-		[]byte(nil),
-		source...,
-	)
-}
-
 func (r *Router) Unmount(
 	ctx context.Context,
 ) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
 	err := r.unmountMountedRoutes(
 		ctx,
 		r.mounted,
