@@ -79,6 +79,7 @@ func (r *Router) Mount(ctx context.Context) error {
 		transport := http.DefaultTransport.(*http.Transport).Clone()
 
 		transport.ResponseHeaderTimeout = r.cfg.ResponseHeaderTimeout
+		transport.MaxResponseHeaderBytes = r.cfg.MaxResponseHeaderBytes
 
 		proxy.Transport = transport
 
@@ -196,12 +197,11 @@ func (r *Router) Mount(ctx context.Context) error {
 }
 
 func (r *Router) Unmount(ctx context.Context) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
 	err := r.unmountMountedRoutes(ctx, r.mounted)
 	r.mounted = nil
+
+	// TODO: if additional shutdown resources are introduced, we should revisit
+	//  whether failed cleanup should allow retries
 
 	return err
 }
@@ -218,12 +218,24 @@ func (r *Router) unmountMountedRoutes(
 		if err := route.server.Shutdown(ctx); err != nil {
 			r.logger.Error(
 				"Failed to unmount router route",
-				log.String(keys.EnvironmentServiceID, route.route.ServiceID),
-				log.String(keys.EnvironmentServiceListenAddress, route.route.ListenAddress),
+				log.String(
+					keys.EnvironmentServiceID,
+					route.route.ServiceID,
+				),
+				log.String(
+					keys.EnvironmentServiceListenAddress,
+					route.route.ListenAddress,
+				),
 				log.Err(keys.Cause, err),
 			)
 
 			accErr = nativeerrors.Join(accErr, err)
+
+			// Force-close active connections when graceful
+			// shutdown cannot complete.
+			if closeErr := route.server.Close(); closeErr != nil {
+				accErr = nativeerrors.Join(accErr, closeErr)
+			}
 		}
 
 		route.transport.CloseIdleConnections()
