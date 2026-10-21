@@ -129,8 +129,7 @@ func decodePagingAnchor(
 		return nil, errorc.With(
 			errors.ErrInvalidCursor,
 			errorc.String(keys.RequestKind, requestKind),
-			errorc.String(keys.CursorTimestampValue, payload.Value),
-			errorc.Error(keys.Validation, err),
+			errorc.String(keys.Validation, "invalid cursor timestamp"),
 		)
 	}
 
