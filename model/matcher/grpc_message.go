@@ -56,7 +56,6 @@ func (m *GRPCMessage) UnmarshalJSON(data []byte) error {
 		return errorc.With(
 			errors.ErrInvalidGRPCMessageMatcher,
 			errorc.String(keys.Validation, "gRPC message matcher must be a string or object"),
-			errorc.Error(keys.Cause, err),
 		)
 	}
 

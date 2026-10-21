@@ -85,6 +85,10 @@ linters:
           - goconst
           - lll
 
+      - path: ^(model/matcher/(grpc_message|string)\.go)$
+        linters:
+          - dupl
+
       - path: ^api/
         linters:
           - dupl
