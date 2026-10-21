@@ -2,7 +2,6 @@ package resource
 
 import (
 	"context"
-	"strings"
 
 	"github.com/ygrebnov/errorc"
 
@@ -52,7 +51,6 @@ func resolveResourceID(
 			errors.ErrEntityPrefixAmbiguous,
 			errorc.String(keys.EntityID, ref),
 			errorc.String(keys.EntityKind, string(kind)),
-			errorc.String(keys.EntityIDs, strings.Join(ids, ",")),
 		)
 	}
 
@@ -61,7 +59,6 @@ func resolveResourceID(
 			errors.ErrEntityPrefixAmbiguous,
 			errorc.String(keys.EntityName, ref),
 			errorc.String(keys.EntityKind, string(kind)),
-			errorc.String(keys.EntityIDs, strings.Join(nameIDs, ",")),
 		)
 	}
 
@@ -106,7 +103,6 @@ func resolveEntityID(
 			errors.ErrEntityPrefixAmbiguous,
 			errorc.String(keys.EntityID, ref),
 			errorc.String(keys.EntityKind, string(kind)),
-			errorc.String(keys.EntityIDs, strings.Join(ids, ",")),
 		)
 	}
 }
