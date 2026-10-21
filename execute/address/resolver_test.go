@@ -1,6 +1,7 @@
 package address_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/e2engine/core/execute/address"
@@ -81,6 +82,91 @@ func TestNewResolver(t *testing.T) {
 				"dynamodb": "my host",
 			},
 			wantErr: true,
+		},
+		{
+			name: "source contains userinfo separator",
+			hosts: map[string]string{
+				"user@host": "127.0.0.1",
+			},
+			wantErr: true,
+		},
+		{
+			name: "destination contains userinfo separator",
+			hosts: map[string]string{
+				"api": "trusted@attacker.example",
+			},
+			wantErr: true,
+		},
+		{
+			name: "destination contains query marker",
+			hosts: map[string]string{
+				"api": "host?query",
+			},
+			wantErr: true,
+		},
+		{
+			name: "destination contains fragment marker",
+			hosts: map[string]string{
+				"api": "host#fragment",
+			},
+			wantErr: true,
+		},
+		{
+			name: "source starts with hyphen",
+			hosts: map[string]string{
+				"-api": "localhost",
+			},
+			wantErr: true,
+		},
+		{
+			name: "destination ends with hyphen",
+			hosts: map[string]string{
+				"api": "host-",
+			},
+			wantErr: true,
+		},
+		{
+			name: "empty DNS label",
+			hosts: map[string]string{
+				"api..internal": "localhost",
+			},
+			wantErr: true,
+		},
+		{
+			name: "DNS label too long",
+			hosts: map[string]string{
+				"api": strings.Repeat("a", 64) + ".internal",
+			},
+			wantErr: true,
+		},
+		{
+			name: "hostname too long",
+			hosts: map[string]string{
+				"api": strings.Repeat("a", 63) + "." +
+					strings.Repeat("b", 63) + "." +
+					strings.Repeat("c", 63) + "." +
+					strings.Repeat("d", 63),
+			},
+			wantErr: true,
+		},
+		{
+			name: "IPv6 mapping rejected",
+			hosts: map[string]string{
+				"api": "::1",
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid hyphenated hostname",
+			hosts: map[string]string{
+				"api-service": "svc-1.internal",
+			},
+		},
+		{
+			name: "valid mixed-case hostname",
+			hosts: map[string]string{
+				"API": "Svc.Internal",
+			},
 		},
 	}
 
@@ -261,6 +347,24 @@ func TestResolver_ResolveHTTPURL(t *testing.T) {
 			input:   "/health",
 			wantErr: true,
 		},
+		{
+			name:    "userinfo rejected",
+			input:   "https://username:password@api.example.com/health",
+			wantErr: true,
+		},
+		{
+			name: "mapped hostname with userinfo rejected",
+			hosts: map[string]string{
+				"api": "127.0.0.1",
+			},
+			input:   "http://user@api:3000/health",
+			wantErr: true,
+		},
+		{
+			name:    "malformed URL escape",
+			input:   "http://api/%zz",
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -383,6 +487,26 @@ func TestResolver_ResolveGRPCTarget(t *testing.T) {
 		{
 			name:    "empty target",
 			input:   "",
+			wantErr: true,
+		},
+		{
+			name:    "missing hostname",
+			input:   ":50051",
+			wantErr: true,
+		},
+		{
+			name:    "invalid port",
+			input:   "account:abc",
+			wantErr: true,
+		},
+		{
+			name:    "port out of range",
+			input:   "account:65536",
+			wantErr: true,
+		},
+		{
+			name:    "zero port",
+			input:   "account:0",
 			wantErr: true,
 		},
 	}
