@@ -118,6 +118,10 @@ linters:
         linters:
           - lll
 
+      - path: ^(transport/config\.go)$
+        linters:
+          - lll
+
       - path: ^execute/runtime/router/(grpc|http)/router\.go$
         linters:
           - funlen
