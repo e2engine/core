@@ -3,9 +3,9 @@ package socket
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net"
+	"time"
 
 	"github.com/ygrebnov/errorc"
 
@@ -14,12 +14,18 @@ import (
 )
 
 type Receiver struct {
+	cfg      *transport.SocketConfig
 	address  string
 	listener net.Listener
 }
 
-func NewReceiver(address string) *Receiver {
+func NewReceiver(
+	cfg *transport.SocketConfig,
+	address string,
+) *Receiver {
+	// TODO: address local peer authentication
 	return &Receiver{
+		cfg:     cfg,
 		address: address,
 	}
 }
@@ -38,62 +44,135 @@ func (t *Receiver) Listen() error {
 			errorc.Error(keys.Cause, err),
 		)
 	}
-
 	t.listener = listener
-
 	return nil
 }
 
 func (t *Receiver) Receive(
 	ctx context.Context,
 ) (transport.Message, error) {
+	var zero transport.Message
+
+	if err := ctx.Err(); err != nil {
+		return zero, err
+	}
+
+	// Cancellation terminates the receiver by closing
+	// its listener and interrupting any blocked Accept().
+	stopAccept := context.AfterFunc(ctx, func() {
+		_ = t.listener.Close()
+	})
+	defer stopAccept()
+
 	for {
-		var message transport.Message
+		if err := ctx.Err(); err != nil {
+			return zero, err
+		}
 
 		connection, err := t.listener.Accept()
 		if err != nil {
 			if ctx.Err() != nil {
-				return message, ctx.Err()
+				return zero, ctx.Err()
 			}
 
-			return message, errorc.With(
+			return zero, errorc.With(
 				ErrCannotAccept,
 				errorc.String(keys.SocketAddress, t.address),
 				errorc.Error(keys.Cause, err),
 			)
 		}
 
-		if deadline, ok := ctx.Deadline(); ok {
-			if errSetDeadline := connection.SetReadDeadline(deadline); errSetDeadline != nil {
-				_ = connection.Close()
-
-				return message, errorc.With(
-					ErrCannotSetReadDeadline,
-					errorc.String(keys.SocketAddress, t.address),
-					errorc.String(keys.SocketReadDeadline, deadline.String()),
-					errorc.Error(keys.Cause, errSetDeadline),
-				)
-			}
+		message, empty, err := t.readMessage(
+			ctx,
+			connection,
+		)
+		if err != nil {
+			return zero, err
 		}
 
-		err = json.NewDecoder(connection).Decode(&message)
-		_ = connection.Close()
-
-		if errors.Is(err, io.EOF) {
+		if empty {
 			// Empty connection, e.g. readiness probe.
 			continue
 		}
 
-		if err != nil {
-			return message, errorc.With(
-				ErrCannotReceiveMessage,
-				errorc.String(keys.SocketAddress, t.address),
-				errorc.Error(keys.Cause, err),
-			)
-		}
-
 		return message, nil
 	}
+}
+
+func (t *Receiver) readMessage(
+	ctx context.Context,
+	connection net.Conn,
+) (transport.Message, bool, error) {
+	var message transport.Message
+
+	defer connection.Close()
+
+	deadline := time.Now().Add(
+		t.cfg.ReadTimeout,
+	)
+
+	if ctxDeadline, ok := ctx.Deadline(); ok &&
+		ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+
+	if err := connection.SetReadDeadline(deadline); err != nil {
+		return message, false, errorc.With(
+			ErrCannotSetReadDeadline,
+			errorc.String(keys.SocketAddress, t.address),
+			errorc.String(
+				keys.SocketReadDeadline,
+				deadline.String(),
+			),
+			errorc.Error(keys.Cause, err),
+		)
+	}
+
+	// Interrupt an active read on context cancellation.
+	stopRead := context.AfterFunc(ctx, func() {
+		_ = connection.Close()
+	})
+	defer stopRead()
+
+	// Read at most MaxMessageSize+1 bytes.
+	// The extra byte allows us to distinguish a message
+	// exactly at the limit from an oversized message.
+	data, err := io.ReadAll(
+		io.LimitReader(
+			connection,
+			t.cfg.MaxMessageSize+1,
+		),
+	)
+
+	if ctx.Err() != nil {
+		return message, false, ctx.Err()
+	}
+
+	if err != nil {
+		return message, false, errorc.With(
+			ErrCannotReceiveMessage,
+			errorc.String(keys.SocketAddress, t.address),
+			errorc.Error(keys.Cause, err),
+		)
+	}
+
+	if int64(len(data)) > t.cfg.MaxMessageSize {
+		return message, false, ErrMessageSizeLimitExceeded
+	}
+
+	if len(data) == 0 {
+		return message, true, nil
+	}
+
+	if errUnmarshal := json.Unmarshal(data, &message); errUnmarshal != nil {
+		return message, false, errorc.With(
+			ErrCannotReceiveMessage,
+			errorc.String(keys.SocketAddress, t.address),
+			errorc.Error(keys.Cause, errUnmarshal),
+		)
+	}
+
+	return message, false, nil
 }
 
 func (t *Receiver) Close() error {
