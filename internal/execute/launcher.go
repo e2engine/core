@@ -314,10 +314,13 @@ func (l *Launcher) completeTestExecutionAfterError(
 	testSuiteExecutionID string,
 	err error,
 ) error {
+	stateUpdateCtx, cancel := newStateUpdateContext(ctx)
+	defer cancel()
+
 	return nativeerrors.Join(
 		err,
 		l.completeTestExecutionWithError(
-			ctx,
+			stateUpdateCtx,
 			executionID,
 			testSuiteExecutionID,
 			err,
@@ -331,13 +334,16 @@ func (l *Launcher) completeTestExecutionsWithError(
 	executionIDs []string,
 	err error,
 ) error {
+	stateUpdateCtx, cancel := newStateUpdateContext(ctx)
+	defer cancel()
+
 	var completeErr error
 
 	for _, executionID := range executionIDs {
 		completeErr = nativeerrors.Join(
 			completeErr,
 			l.completeTestExecutionWithError(
-				ctx,
+				stateUpdateCtx,
 				executionID,
 				testSuiteExecutionID,
 				err,
@@ -357,6 +363,16 @@ func (r publishTestJobResult) Err() error {
 	return nativeerrors.Join(
 		r.scheduleErr,
 		r.stateUpdateErr,
+	)
+}
+
+func newStateUpdateContext(ctx context.Context) (
+	context.Context,
+	context.CancelFunc,
+) {
+	return context.WithTimeout(
+		context.WithoutCancel(ctx),
+		10*time.Second,
 	)
 }
 
@@ -382,10 +398,14 @@ func (l *Launcher) publishTestJob(
 			err,
 		)
 
+		// Finalize the persisted execution even if the caller was canceled.
+		stateUpdateCtx, stateUpdateCtxCancel := newStateUpdateContext(ctx)
+		defer stateUpdateCtxCancel()
+
 		return publishTestJobResult{
 			scheduleErr: scheduleErr,
 			stateUpdateErr: l.completeTestExecutionWithError(
-				ctx,
+				stateUpdateCtx,
 				job.ExecutionID,
 				job.TestSuiteExecutionID,
 				scheduleErr,
@@ -422,7 +442,7 @@ func (l *Launcher) completeTestExecutionWithError(
 	ctx context.Context,
 	executionID string,
 	testSuiteExecutionID string,
-	err error,
+	_ error,
 ) error {
 	_, setErr := l.stateUpdater.SetTestCompleted(
 		ctx,
@@ -432,7 +452,8 @@ func (l *Launcher) completeTestExecutionWithError(
 			Status:               model.ExecutionStatusError,
 			FinishedAt:           time.Now().UTC(),
 			Summary: &model.TestExecutionSummary{
-				Error: err.Error(),
+				// TODO: add structured error codes
+				Error: "failed to prepare or schedule test execution",
 			},
 		},
 	)
@@ -443,16 +464,20 @@ func (l *Launcher) completeTestExecutionWithError(
 func (l *Launcher) completeTestSuiteExecutionWithError(
 	ctx context.Context,
 	executionID string,
-	err error,
+	_ error,
 ) error {
+	stateUpdateCtx, cancel := newStateUpdateContext(ctx)
+	defer cancel()
+
 	_, setErr := l.stateUpdater.SetTestSuiteCompleted(
-		ctx,
+		stateUpdateCtx,
 		execute.TestSuiteExecutionResult{
 			ExecutionID: executionID,
 			Status:      model.ExecutionStatusError,
 			FinishedAt:  time.Now().UTC(),
 			Summary: &model.TestSuiteExecutionSummary{
-				Error: err.Error(),
+				// TODO: add structured error codes
+				Error: "failed to prepare or schedule test suite execution",
 			},
 		},
 	)
