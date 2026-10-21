@@ -3,12 +3,12 @@ package address
 import (
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/ygrebnov/errorc"
 
 	"github.com/e2engine/core/pkg/errors"
-	"github.com/e2engine/core/pkg/keys"
 )
 
 // Resolver substitutes explicitly mapped hostnames in outgoing addresses.
@@ -21,13 +21,9 @@ func NewResolver(hosts map[string]string) (*Resolver, error) {
 	copyHosts := make(map[string]string, len(hosts))
 
 	for from, to := range hosts {
-		if from == "" || to == "" ||
-			strings.ContainsAny(from, ":/ ") ||
-			strings.ContainsAny(to, ":/ ") {
+		if !validHostname(from) || !validHostname(to) {
 			return nil, errorc.With(
 				errors.ErrInvalidHostnameMapping,
-				errorc.String(keys.HostnameMappingFrom, from),
-				errorc.String(keys.HostnameMappingTo, to),
 			)
 		}
 
@@ -41,19 +37,15 @@ func NewResolver(hosts map[string]string) (*Resolver, error) {
 func (r *Resolver) ResolveHTTPURL(value string) (string, error) {
 	u, err := url.Parse(value)
 	if err != nil {
-		return "", errorc.With(
-			errors.ErrInvalidHTTPURL,
-			errorc.String(keys.URL, value),
-			errorc.Error(keys.Cause, err),
-		)
+		return "", errors.ErrInvalidHTTPURL
 	}
 
 	if (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
-		return "", errorc.With(
-			errors.ErrInvalidHTTPURL,
-			errorc.String(keys.URL, value),
-			errorc.Error(keys.Cause, err),
-		)
+		return "", errors.ErrInvalidHTTPURL
+	}
+
+	if u.User != nil {
+		return "", errors.ErrInvalidHTTPURL
 	}
 
 	if mapped, ok := r.hosts[u.Hostname()]; ok {
@@ -73,11 +65,16 @@ func (r *Resolver) ResolveHTTPURL(value string) (string, error) {
 func (r *Resolver) ResolveGRPCTarget(value string) (string, error) {
 	host, port, err := net.SplitHostPort(value)
 	if err != nil {
-		return "", errorc.With(
-			errors.ErrInvalidGRPCTarget,
-			errorc.String(keys.URL, value),
-			errorc.Error(keys.Cause, err),
-		)
+		return "", errors.ErrInvalidGRPCTarget
+	}
+
+	if host == "" {
+		return "", errors.ErrInvalidGRPCTarget
+	}
+
+	portNumber, err := strconv.ParseUint(port, 10, 16)
+	if err != nil || portNumber == 0 {
+		return "", errors.ErrInvalidGRPCTarget
 	}
 
 	if mapped, ok := r.hosts[host]; ok {
@@ -85,4 +82,37 @@ func (r *Resolver) ResolveGRPCTarget(value string) (string, error) {
 	}
 
 	return value, nil
+}
+
+func validHostname(value string) bool {
+	if value == "" || len(value) > 253 {
+		return false
+	}
+
+	if ip := net.ParseIP(value); ip != nil {
+		return ip.To4() != nil
+	}
+
+	for _, label := range strings.Split(value, ".") {
+		if label == "" || len(label) > 63 {
+			return false
+		}
+
+		if label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+
+		for _, c := range label {
+			if (c >= 'a' && c <= 'z') ||
+				(c >= 'A' && c <= 'Z') ||
+				(c >= '0' && c <= '9') ||
+				c == '-' {
+				continue
+			}
+
+			return false
+		}
+	}
+
+	return true
 }

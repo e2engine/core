@@ -181,7 +181,7 @@ func validateHTTPURL(value string) error {
 		)
 	}
 
-	if u.Host == "" {
+	if u.Hostname() == "" {
 		return errorc.With(
 			errors.ErrInvalidSpec,
 			errorc.String(
