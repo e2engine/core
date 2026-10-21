@@ -59,6 +59,7 @@ var (
 
 	ErrUnsupportedFileType = errorc.New("unsupported file type")
 
+	ErrInvalidStringMatcher      = errorc.New("invalid string matcher")
 	ErrInvalidGRPCMessageMatcher = errorc.New("invalid gRPC message matcher")
 
 	ErrInvalidHTTPURL                    = errorc.New("invalid HTTP URL")

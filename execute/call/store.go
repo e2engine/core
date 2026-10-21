@@ -33,13 +33,14 @@ func (c *Store) Record(record Call) error {
 		return errors.ErrCallStoreLimitExceeded
 	}
 
-	snapshot := record.Clone()
-	size := snapshot.Size()
+	size := record.Size()
 
 	if size > c.maxBytes-c.recordedBytes {
 		c.limitExceeded = true
 		return errors.ErrCallStoreLimitExceeded
 	}
+
+	snapshot := record.Clone()
 
 	c.calls = append(c.calls, snapshot)
 	c.recordedBytes += size

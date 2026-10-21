@@ -2,7 +2,6 @@ package matcher
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/ygrebnov/errorc"
 	modellib "github.com/ygrebnov/model"
@@ -55,9 +54,12 @@ func (m *String) UnmarshalJSON(data []byte) error {
 	type alias String
 	var matcher alias
 	if err := json.Unmarshal(data, &matcher); err != nil {
-		return fmt.Errorf(
-			"string matcher must be a string or object: %w",
-			err,
+		return errorc.With(
+			errors.ErrInvalidStringMatcher,
+			errorc.String(
+				keys.Validation,
+				"string matcher must be a string or object",
+			),
 		)
 	}
 
@@ -85,8 +87,12 @@ func (m *String) UnmarshalYAML(node *yaml.Node) error {
 	}
 
 	if node.Kind != yaml.MappingNode {
-		return fmt.Errorf(
-			"string matcher must be a string or object",
+		return errorc.With(
+			errors.ErrInvalidStringMatcher,
+			errorc.String(
+				keys.Validation,
+				"string matcher must be a string or object",
+			),
 		)
 	}
 
