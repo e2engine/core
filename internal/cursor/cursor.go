@@ -42,7 +42,16 @@ func GetBinding() (*modellib.Binding[Payload], error) {
 	)
 }
 
+const MaxCursorLength = 4096
+
 func Parse(ctx context.Context, binding *modellib.Binding[Payload], opaque string) (Payload, error) {
+	if len(opaque) > MaxCursorLength {
+		return Payload{}, errorc.With(
+			errors.ErrInvalidCursor,
+			errorc.String(keys.Validation, "cursor exceeds maximum length"),
+		)
+	}
+
 	data, err := base64.RawURLEncoding.DecodeString(opaque)
 	if err != nil {
 		return Payload{}, errorc.With(
@@ -100,5 +109,14 @@ func Encode(ctx context.Context, binding *modellib.Binding[Payload], payload Pay
 		)
 	}
 
-	return base64.RawURLEncoding.EncodeToString(data), nil
+	encoded := base64.RawURLEncoding.EncodeToString(data)
+
+	if len(encoded) > MaxCursorLength {
+		return "", errorc.With(
+			errors.ErrInvalidCursor,
+			errorc.String(keys.Validation, "cursor exceeds maximum length"),
+		)
+	}
+
+	return encoded, nil
 }

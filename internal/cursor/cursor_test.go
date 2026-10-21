@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/e2engine/core/model"
@@ -73,6 +74,15 @@ func TestEncode(t *testing.T) {
 				ID:             id1,
 				Position:       PositionAfter,
 				OrderDirection: model.OrderDirection("invalid"),
+			},
+			expectedError: errors.ErrInvalidCursor,
+		},
+		{
+			name: "cursor exceeds maximum length",
+			payload: Payload{
+				Value:    strings.Repeat("a", MaxCursorLength),
+				ID:       id1,
+				Position: PositionAfter,
 			},
 			expectedError: errors.ErrInvalidCursor,
 		},
@@ -212,6 +222,16 @@ func TestParse(t *testing.T) {
 			}),
 			expectedError: errors.ErrInvalidCursor,
 		},
+		{
+			name:          "cursor exceeds maximum length",
+			opaque:        strings.Repeat("a", MaxCursorLength+1),
+			expectedError: errors.ErrInvalidCursor,
+		},
+		{
+			name:          "cursor at maximum length is decoded",
+			opaque:        strings.Repeat("%", MaxCursorLength),
+			expectedError: errors.ErrCannotDecodeCursor,
+		},
 	}
 
 	for _, test := range tests {
@@ -332,6 +352,53 @@ func TestEncodeParse(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestEncodeParseNearMaxCursorLength(t *testing.T) {
+	binding, err := GetBinding()
+	if err != nil {
+		t.Fatalf("GetBinding() error = %v", err)
+	}
+
+	payload := Payload{
+		Value:    strings.Repeat("a", 2900),
+		ID:       id1,
+		Position: PositionAfter,
+	}
+
+	encoded, err := Encode(
+		t.Context(),
+		binding,
+		payload,
+	)
+	if err != nil {
+		t.Fatalf("Encode() error = %v", err)
+	}
+
+	if len(encoded) > MaxCursorLength {
+		t.Fatalf(
+			"encoded cursor length = %d, maximum = %d",
+			len(encoded),
+			MaxCursorLength,
+		)
+	}
+
+	decoded, err := Parse(
+		t.Context(),
+		binding,
+		encoded,
+	)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	if decoded.Value != payload.Value {
+		t.Errorf(
+			"decoded value length = %d, want %d",
+			len(decoded.Value),
+			len(payload.Value),
+		)
 	}
 }
 
