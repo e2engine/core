@@ -840,7 +840,8 @@ func TestControllerGetTestsByTag(t *testing.T) {
 	errGetByTag := errors.New("get by tag error")
 
 	tests := []struct {
-		name string
+		name  string
+		limit int
 
 		repositoryTests []repository.Test
 		repositoryError error
@@ -849,7 +850,8 @@ func TestControllerGetTestsByTag(t *testing.T) {
 		expectedError error
 	}{
 		{
-			name: "success",
+			name:  "success",
+			limit: 10,
 			repositoryTests: []repository.Test{
 				{
 					ID:          "test-001",
@@ -873,16 +875,19 @@ func TestControllerGetTestsByTag(t *testing.T) {
 		},
 		{
 			name:            "empty",
+			limit:           10,
 			repositoryTests: []repository.Test{},
 			expectedIDs:     []string{},
 		},
 		{
 			name:            "repository error",
+			limit:           10,
 			repositoryError: errGetByTag,
 			expectedError:   errGetByTag,
 		},
 		{
-			name: "conversion error",
+			name:  "conversion error",
+			limit: 10,
 			repositoryTests: []repository.Test{
 				{
 					ID:   "test-001",
@@ -890,6 +895,18 @@ func TestControllerGetTestsByTag(t *testing.T) {
 				},
 			},
 			expectedError: coreerrors.ErrCannotParseSpec,
+		},
+		{
+			name:  "custom limit",
+			limit: 1,
+			repositoryTests: []repository.Test{
+				{
+					ID:      "test-001",
+					Version: InitialVersion,
+					Spec:    specJSON,
+				},
+			},
+			expectedIDs: []string{"test-001"},
 		},
 	}
 
@@ -902,6 +919,7 @@ func TestControllerGetTestsByTag(t *testing.T) {
 				GetByTag(
 					gomock.Any(),
 					"smoke",
+					tt.limit,
 				).
 				Return(
 					tt.repositoryTests,
@@ -915,6 +933,7 @@ func TestControllerGetTestsByTag(t *testing.T) {
 			actual, err := controller.GetTestsByTag(
 				t.Context(),
 				"smoke",
+				tt.limit,
 			)
 
 			if tt.expectedError != nil {

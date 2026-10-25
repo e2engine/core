@@ -9,12 +9,16 @@ import (
 )
 
 var (
-	ErrNotFound             = errorc.New("not found")
-	ErrConflict             = errorc.New("conflict")
-	ErrAlreadyExists        = errorc.New("already exists")
-	ErrInvalidPayload       = errorc.New("invalid payload")
-	ErrInvalidPageTraversal = errorc.New("invalid page traversal")
-	ErrInvalidPageLimit     = errorc.New("invalid page limit")
+	ErrNotFound                        = errorc.New("not found")
+	ErrConflict                        = errorc.New("conflict")
+	ErrAlreadyExists                   = errorc.New("already exists")
+	ErrInvalidPayload                  = errorc.New("invalid payload")
+	ErrInvalidPageTraversal            = errorc.New("invalid page traversal")
+	ErrInvalidPageLimit                = errorc.New("invalid page limit")
+	ErrInvalidExecutionStateTransition = errorc.New("invalid execution state transition")
+	ErrInvalidExecutionStatus          = errorc.New("invalid execution status")
+	ErrTooManyResults                  = errorc.New("too many results")
+	ErrInvalidType                     = errorc.New("invalid type")
 )
 
 type EntityRepository[E Entity] interface {
@@ -35,7 +39,7 @@ type TestSuiteRepository = ResourceRepository[TestSuite]
 
 type TestRepository interface {
 	ResourceRepository[Test]
-	GetByTag(ctx context.Context, tag string) ([]Test, error)
+	GetByTag(ctx context.Context, tag string, limit int) ([]Test, error)
 }
 
 type SetRunningParams struct {
@@ -50,9 +54,26 @@ type SetCompletedParams struct {
 	Summary    json.RawMessage `json:"summary"`
 }
 
+type TestSuiteExecutionState struct {
+	Status             string
+	Count              int
+	LastTestFinishedAt time.Time
+}
+
 type TestExecutionRepository interface {
 	EntityRepository[TestExecution]
+
 	GetByTestSuiteExecutionID(ctx context.Context, id string) ([]TestExecution, error)
+	// GetTestSuiteExecutionStates returns aggregated child execution states
+	// unless the parent suite execution is already completed.
+	//
+	// The boolean indicates whether the parent is in a terminal state.
+	// Returns ErrNotFound if the parent does not exist.
+	GetTestSuiteExecutionStates(
+		ctx context.Context,
+		testSuiteExecutionID string,
+	) ([]TestSuiteExecutionState, bool, error)
+
 	SetRunning(ctx context.Context, params *SetRunningParams) error
 	SetCompleted(ctx context.Context, params *SetCompletedParams) error
 	GetStatus(ctx context.Context, id string) (string, error)

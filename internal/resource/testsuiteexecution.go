@@ -93,6 +93,7 @@ func (s *Controller) GetTestSuiteExecution(ctx context.Context, prefix string) (
 		return nil, err
 	}
 
+	// TODO: Paginate child test executions instead of loading the entire suite at once.
 	dbTests, err := s.testExecution.GetByTestSuiteExecutionID(
 		ctx,
 		testSuiteExecution.ID,

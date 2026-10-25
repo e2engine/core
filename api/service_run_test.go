@@ -269,7 +269,7 @@ func TestService_RunTestSuite(t *testing.T) {
 			)
 
 		testRepo.EXPECT().
-			GetByTag(gomock.Any(), "smoke").
+			GetByTag(gomock.Any(), "smoke", 11).
 			Return(nil, nil)
 
 		launcher := &fakeLauncher{}
@@ -368,7 +368,7 @@ func TestService_RunTestSuite(t *testing.T) {
 
 		// test-a is deliberately returned again by the tag lookup.
 		testRepo.EXPECT().
-			GetByTag(gomock.Any(), "smoke").
+			GetByTag(gomock.Any(), "smoke", 11).
 			Return([]repository.Test{
 				*runRepositoryTest("test-b", "test-b"),
 				*runRepositoryTest("test-a", "test-a"),
@@ -481,7 +481,7 @@ func TestService_RunTestSuite(t *testing.T) {
 			)
 
 		testRepo.EXPECT().
-			GetByTag(gomock.Any(), "smoke").
+			GetByTag(gomock.Any(), "smoke", 3).
 			Return([]repository.Test{
 				*runRepositoryTest("test-a", "test-a"),
 				*runRepositoryTest("test-b", "test-b"),
@@ -560,7 +560,7 @@ func TestService_RunTestSuite(t *testing.T) {
 			)
 
 		testRepo.EXPECT().
-			GetByTag(gomock.Any(), "smoke").
+			GetByTag(gomock.Any(), "smoke", 11).
 			Return([]repository.Test{
 				*runRepositoryTest("test-a", "test-a"),
 			}, nil)
@@ -601,6 +601,109 @@ func TestService_RunTestSuite(t *testing.T) {
 			t.Errorf(
 				"RunTestSuite() = %q, want empty execution ID",
 				got,
+			)
+		}
+	})
+
+	t.Run("overlapping selectors at limit", func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+
+		environmentRepo := mock.NewMockResourceRepository[repository.Environment](ctrl)
+		testSuiteRepo := mock.NewMockResourceRepository[repository.TestSuite](ctrl)
+		testRepo := mock.NewMockTestRepository(ctrl)
+
+		environmentRepo.EXPECT().
+			GetIDsByID(gomock.Any(), "env").
+			Return([]string{"environment-001"}, nil)
+
+		environmentRepo.EXPECT().
+			Get(gomock.Any(), "environment-001").
+			Return(runRepositoryEnvironment(), nil)
+
+		testSuiteRepo.EXPECT().
+			GetIDsByID(gomock.Any(), "suite").
+			Return([]string{"testsuite-001"}, nil)
+
+		testSuiteRepo.EXPECT().
+			Get(gomock.Any(), "testsuite-001").
+			Return(
+				runRepositoryTestSuite(
+					model.TestSelectorsSpec{
+						IDs:  []string{"test-a"},
+						Tags: []string{"smoke"},
+					},
+				),
+				nil,
+			)
+
+		testRepo.EXPECT().
+			GetIDsByID(gomock.Any(), "test-a").
+			Return([]string{"test-a"}, nil)
+
+		testRepo.EXPECT().
+			Get(gomock.Any(), "test-a").
+			Return(runRepositoryTest("test-a", "test-a"), nil)
+
+		// Two matching tests, one already resolved by ID.
+		testRepo.EXPECT().
+			GetByTag(gomock.Any(), "smoke", 3).
+			Return([]repository.Test{
+				*runRepositoryTest("test-a", "test-a"),
+				*runRepositoryTest("test-b", "test-b"),
+			}, nil)
+
+		launcher := &fakeLauncher{
+			startTestSuiteResult: "suite-execution-001",
+		}
+
+		service := newRunService(
+			t,
+			Repositories{
+				Environment: environmentRepo,
+				Test:        testRepo,
+				TestSuite:   testSuiteRepo,
+			},
+			launcher,
+			2,
+		)
+
+		got, err := service.RunTestSuite(
+			t.Context(),
+			TestSuiteRunRequest{
+				EnvironmentRef: "env",
+				TestSuiteRef:   "suite",
+			},
+		)
+		if err != nil {
+			t.Fatalf("RunTestSuite() error = %v", err)
+		}
+
+		if got != "suite-execution-001" {
+			t.Errorf(
+				"RunTestSuite() = %q, want suite-execution-001",
+				got,
+			)
+		}
+
+		if launcher.startTestSuiteCalls != 1 {
+			t.Fatalf(
+				"StartTestSuite calls = %d, want 1",
+				launcher.startTestSuiteCalls,
+			)
+		}
+
+		gotIDs := make([]string, len(launcher.testSuiteRequest.Tests))
+		for i, test := range launcher.testSuiteRequest.Tests {
+			gotIDs[i] = test.ID
+		}
+
+		wantIDs := []string{"test-a", "test-b"}
+
+		if !reflect.DeepEqual(gotIDs, wantIDs) {
+			t.Errorf(
+				"Resolved test IDs = %v, want %v",
+				gotIDs,
+				wantIDs,
 			)
 		}
 	})

@@ -150,6 +150,7 @@ func (s *Service) resolveTestSuiteTests(
 	selectors model.TestSelectorsSpec,
 ) ([]model.Test, error) {
 	tests := make(map[string]model.Test)
+	limit := s.runtimeCfg.MaxResolvedTests
 
 	for _, ref := range selectors.IDs {
 		test, err := s.GetTest(ctx, ref)
@@ -158,6 +159,9 @@ func (s *Service) resolveTestSuiteTests(
 		}
 
 		tests[test.ID] = *test
+		if errLimit := checkResolvedTestsLimit(len(tests), limit); errLimit != nil {
+			return nil, errLimit
+		}
 	}
 
 	for _, ref := range selectors.Names {
@@ -167,29 +171,31 @@ func (s *Service) resolveTestSuiteTests(
 		}
 
 		tests[test.ID] = *test
+		if errLimit := checkResolvedTestsLimit(len(tests), limit); errLimit != nil {
+			return nil, errLimit
+		}
 	}
 
 	for _, tag := range selectors.Tags {
-		matched, err := s.resources.GetTestsByTag(ctx, tag)
+		matched, err := s.resources.GetTestsByTag(ctx, tag, limit+1)
 		if err != nil {
 			return nil, err
 		}
 
+		if len(matched) > limit {
+			return nil, checkResolvedTestsLimit(len(matched), limit)
+		}
+
 		for i := range matched {
 			tests[matched[i].ID] = matched[i]
+			if errLimit := checkResolvedTestsLimit(len(tests), limit); errLimit != nil {
+				return nil, errLimit
+			}
 		}
 	}
 
 	if len(tests) == 0 {
 		return nil, errors.ErrNoTestsResolved
-	}
-
-	if len(tests) > s.runtimeCfg.MaxResolvedTests {
-		return nil, errorc.With(
-			errors.ErrExceededTestsLimit,
-			errorc.Int(keys.TestSuiteMaxTestsNumber, s.runtimeCfg.MaxResolvedTests),
-			errorc.Int(keys.TestSuiteResolvedTestsNumber, len(tests)),
-		)
 	}
 
 	ids := make([]string, 0, len(tests))
@@ -205,4 +211,15 @@ func (s *Service) resolveTestSuiteTests(
 	}
 
 	return result, nil
+}
+
+func checkResolvedTestsLimit(actual, limit int) error {
+	if actual > limit {
+		return errorc.With(
+			errors.ErrExceededTestsLimit,
+			errorc.Int(keys.TestSuiteMaxTestsNumber, limit),
+		)
+	}
+
+	return nil
 }
