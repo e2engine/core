@@ -1,145 +1,126 @@
 package persist
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
+	"go.uber.org/mock/gomock"
+
 	"github.com/e2engine/core/execute"
+	"github.com/e2engine/core/mock"
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/repository"
 )
 
+const (
+	testExecutionID  = "test-execution-1"
+	suiteExecutionID = "suite-execution-1"
+)
+
 func TestUpdaterSetTestRunning(t *testing.T) {
-	startedAt := time.Date(
-		2026, 9, 18, 10, 0, 0, 0, time.UTC,
-	)
+	startedAt := time.Date(2026, 9, 18, 10, 0, 0, 0, time.UTC)
 
-	testRepository := &testExecutionRepository{}
-	updater := NewUpdater(
-		testRepository,
-		&testSuiteExecutionRepository{},
-	)
+	ctrl := gomock.NewController(t)
+	tests := mock.NewMockTestExecutionRepository(ctrl)
+	suites := mock.NewMockTestSuiteExecutionRepository(ctrl)
 
-	err := updater.SetTestRunning(
-		context.Background(),
-		"test-execution-1",
+	tests.EXPECT().
+		SetRunning(
+			gomock.Any(),
+			&repository.SetRunningParams{
+				ID:        testExecutionID,
+				StartedAt: startedAt,
+			},
+		).
+		Return(nil)
+
+	err := NewUpdater(tests, suites).SetTestRunning(
+		t.Context(),
+		testExecutionID,
 		startedAt,
 	)
 	if err != nil {
-		t.Fatalf("SetTestRunning() error = %v", err)
-	}
-
-	if testRepository.running == nil {
-		t.Fatal("expected SetRunning() to be called")
-	}
-
-	if testRepository.running.ID != "test-execution-1" {
-		t.Errorf(
-			"expected ID test-execution-1, got %s",
-			testRepository.running.ID,
-		)
-	}
-
-	if !testRepository.running.StartedAt.Equal(startedAt) {
-		t.Errorf(
-			"expected StartedAt %v, got %v",
-			startedAt,
-			testRepository.running.StartedAt,
-		)
+		t.Fatalf("SetTestRunning: %v", err)
 	}
 }
 
 func TestUpdaterSetTestRunningError(t *testing.T) {
-	expectedErr := errors.New("set running")
+	expected := errors.New("set running")
 
-	updater := NewUpdater(
-		&testExecutionRepository{
-			setRunningErr: expectedErr,
-		},
-		&testSuiteExecutionRepository{},
-	)
+	ctrl := gomock.NewController(t)
+	tests := mock.NewMockTestExecutionRepository(ctrl)
 
-	err := updater.SetTestRunning(
-		context.Background(),
-		"test-execution-1",
+	tests.EXPECT().
+		SetRunning(gomock.Any(), gomock.Any()).
+		Return(expected)
+
+	err := NewUpdater(
+		tests,
+		mock.NewMockTestSuiteExecutionRepository(ctrl),
+	).SetTestRunning(
+		t.Context(),
+		testExecutionID,
 		time.Now(),
 	)
 
-	if !errors.Is(err, expectedErr) {
-		t.Fatalf(
-			"expected error %v, got %v",
-			expectedErr,
-			err,
-		)
+	if !errors.Is(err, expected) {
+		t.Fatalf("got %v, want %v", err, expected)
 	}
 }
 
 func TestUpdaterSetTestSuiteRunning(t *testing.T) {
-	startedAt := time.Date(
-		2026, 9, 18, 10, 0, 0, 0, time.UTC,
-	)
+	startedAt := time.Date(2026, 9, 18, 10, 0, 0, 0, time.UTC)
 
-	suiteRepository := &testSuiteExecutionRepository{}
-	updater := NewUpdater(
-		&testExecutionRepository{},
-		suiteRepository,
-	)
+	ctrl := gomock.NewController(t)
+	suites := mock.NewMockTestSuiteExecutionRepository(ctrl)
 
-	err := updater.SetTestSuiteRunning(
-		context.Background(),
-		"test-suite-execution-1",
+	suites.EXPECT().
+		SetRunning(
+			gomock.Any(),
+			&repository.SetRunningParams{
+				ID:        suiteExecutionID,
+				StartedAt: startedAt,
+			},
+		).
+		Return(nil)
+
+	err := NewUpdater(
+		mock.NewMockTestExecutionRepository(ctrl),
+		suites,
+	).SetTestSuiteRunning(
+		t.Context(),
+		suiteExecutionID,
 		startedAt,
 	)
+
 	if err != nil {
-		t.Fatalf("SetTestSuiteRunning() error = %v", err)
-	}
-
-	if suiteRepository.running == nil {
-		t.Fatal("expected SetRunning() to be called")
-	}
-
-	if suiteRepository.running.ID !=
-		"test-suite-execution-1" {
-		t.Errorf(
-			"expected ID test-suite-execution-1, got %s",
-			suiteRepository.running.ID,
-		)
-	}
-
-	if !suiteRepository.running.StartedAt.Equal(startedAt) {
-		t.Errorf(
-			"expected StartedAt %v, got %v",
-			startedAt,
-			suiteRepository.running.StartedAt,
-		)
+		t.Fatalf("SetTestSuiteRunning: %v", err)
 	}
 }
 
 func TestUpdaterSetTestSuiteRunningError(t *testing.T) {
-	expectedErr := errors.New("set suite running")
+	expected := errors.New("set suite running")
 
-	updater := NewUpdater(
-		&testExecutionRepository{},
-		&testSuiteExecutionRepository{
-			setRunningErr: expectedErr,
-		},
-	)
+	ctrl := gomock.NewController(t)
+	suites := mock.NewMockTestSuiteExecutionRepository(ctrl)
 
-	err := updater.SetTestSuiteRunning(
-		context.Background(),
-		"test-suite-execution-1",
+	suites.EXPECT().
+		SetRunning(gomock.Any(), gomock.Any()).
+		Return(expected)
+
+	err := NewUpdater(
+		mock.NewMockTestExecutionRepository(ctrl),
+		suites,
+	).SetTestSuiteRunning(
+		t.Context(),
+		suiteExecutionID,
 		time.Now(),
 	)
 
-	if !errors.Is(err, expectedErr) {
-		t.Fatalf(
-			"expected error %v, got %v",
-			expectedErr,
-			err,
-		)
+	if !errors.Is(err, expected) {
+		t.Fatalf("got %v, want %v", err, expected)
 	}
 }
 
@@ -148,482 +129,476 @@ func TestUpdaterSetTestCompletedStandalone(t *testing.T) {
 		2026, 9, 18, 10, 1, 0, 0, time.UTC,
 	)
 
-	summary := &model.TestExecutionSummary{
-		Error: "test error",
-	}
+	ctrl := gomock.NewController(t)
+	tests := mock.NewMockTestExecutionRepository(ctrl)
 
-	testRepository := &testExecutionRepository{}
-	updater := NewUpdater(
-		testRepository,
-		&testSuiteExecutionRepository{},
-	)
+	tests.EXPECT().
+		SetCompleted(gomock.Any(), gomock.Any()).
+		DoAndReturn(
+			func(
+				_ any,
+				params *repository.SetCompletedParams,
+			) error {
+				if params.ID != testExecutionID {
+					t.Errorf("unexpected execution ID: %s", params.ID)
+				}
 
-	completed, err := updater.SetTestCompleted(
-		context.Background(),
+				if params.Status != string(model.ExecutionStatusError) {
+					t.Errorf("unexpected status: %s", params.Status)
+				}
+
+				if !params.FinishedAt.Equal(finishedAt) {
+					t.Errorf(
+						"FinishedAt = %v, want %v",
+						params.FinishedAt,
+						finishedAt,
+					)
+				}
+
+				var summary model.TestExecutionSummary
+				if err := json.Unmarshal(
+					params.Summary,
+					&summary,
+				); err != nil {
+					t.Fatalf("unmarshal summary: %v", err)
+				}
+
+				if summary.Error != "test error" {
+					t.Errorf(
+						"summary error = %q, want %q",
+						summary.Error,
+						"test error",
+					)
+				}
+
+				return nil
+			},
+		)
+
+	completed, err := NewUpdater(
+		tests,
+		mock.NewMockTestSuiteExecutionRepository(ctrl),
+	).SetTestCompleted(
+		t.Context(),
 		execute.TestExecutionResult{
-			ExecutionID: "test-execution-1",
+			ExecutionID: testExecutionID,
 			Status:      model.ExecutionStatusError,
 			FinishedAt:  finishedAt,
-			Summary:     summary,
+			Summary: &model.TestExecutionSummary{
+				Error: "test error",
+			},
 		},
 	)
-	if err != nil {
-		t.Fatalf("SetTestCompleted() error = %v", err)
-	}
 
+	if err != nil {
+		t.Fatalf("SetTestCompleted: %v", err)
+	}
 	if !completed {
 		t.Fatal("expected standalone test to be completed")
-	}
-
-	if testRepository.completed == nil {
-		t.Fatal("expected SetCompleted() to be called")
-	}
-
-	if testRepository.completed.ID != "test-execution-1" {
-		t.Errorf(
-			"expected ID test-execution-1, got %s",
-			testRepository.completed.ID,
-		)
-	}
-
-	if testRepository.completed.Status !=
-		string(model.ExecutionStatusError) {
-		t.Errorf(
-			"expected status %s, got %s",
-			model.ExecutionStatusError,
-			testRepository.completed.Status,
-		)
-	}
-
-	if !testRepository.completed.FinishedAt.Equal(
-		finishedAt,
-	) {
-		t.Errorf(
-			"expected FinishedAt %v, got %v",
-			finishedAt,
-			testRepository.completed.FinishedAt,
-		)
-	}
-
-	var actual model.TestExecutionSummary
-	if err := json.Unmarshal(
-		testRepository.completed.Summary,
-		&actual,
-	); err != nil {
-		t.Fatalf("cannot unmarshal summary: %v", err)
-	}
-
-	if actual.Error != summary.Error {
-		t.Errorf(
-			"expected summary error %q, got %q",
-			summary.Error,
-			actual.Error,
-		)
 	}
 }
 
 func TestUpdaterSetTestCompletedNilSummary(t *testing.T) {
-	testRepository := &testExecutionRepository{}
-	updater := NewUpdater(
-		testRepository,
-		&testSuiteExecutionRepository{},
-	)
+	ctrl := gomock.NewController(t)
+	tests := mock.NewMockTestExecutionRepository(ctrl)
 
-	completed, err := updater.SetTestCompleted(
-		context.Background(),
+	tests.EXPECT().
+		SetCompleted(gomock.Any(), gomock.Any()).
+		DoAndReturn(
+			func(
+				_ any,
+				params *repository.SetCompletedParams,
+			) error {
+				if params.Summary != nil {
+					t.Errorf(
+						"expected nil summary, got %s",
+						params.Summary,
+					)
+				}
+				return nil
+			},
+		)
+
+	completed, err := NewUpdater(
+		tests,
+		mock.NewMockTestSuiteExecutionRepository(ctrl),
+	).SetTestCompleted(
+		t.Context(),
 		execute.TestExecutionResult{
-			ExecutionID: "test-execution-1",
+			ExecutionID: testExecutionID,
 			Status:      model.ExecutionStatusPassed,
 			FinishedAt:  time.Now(),
 		},
 	)
-	if err != nil {
-		t.Fatalf("SetTestCompleted() error = %v", err)
-	}
 
-	if !completed {
-		t.Fatal("expected standalone test to be completed")
-	}
-
-	if testRepository.completed.Summary != nil {
-		t.Errorf(
-			"expected nil summary, got %s",
-			testRepository.completed.Summary,
-		)
+	if err != nil || !completed {
+		t.Fatalf("completed=%v, err=%v", completed, err)
 	}
 }
 
 func TestUpdaterSetTestCompletedError(t *testing.T) {
-	expectedErr := errors.New("set completed")
+	expected := errors.New("set completed")
 
-	updater := NewUpdater(
-		&testExecutionRepository{
-			setCompletedErr: expectedErr,
-		},
-		&testSuiteExecutionRepository{},
-	)
+	ctrl := gomock.NewController(t)
+	tests := mock.NewMockTestExecutionRepository(ctrl)
 
-	completed, err := updater.SetTestCompleted(
-		context.Background(),
+	tests.EXPECT().
+		SetCompleted(gomock.Any(), gomock.Any()).
+		Return(expected)
+
+	completed, err := NewUpdater(
+		tests,
+		mock.NewMockTestSuiteExecutionRepository(ctrl),
+	).SetTestCompleted(
+		t.Context(),
 		execute.TestExecutionResult{
-			ExecutionID: "test-execution-1",
+			ExecutionID: testExecutionID,
 			Status:      model.ExecutionStatusPassed,
 		},
 	)
 
-	if !errors.Is(err, expectedErr) {
-		t.Fatalf(
-			"expected error %v, got %v",
-			expectedErr,
-			err,
-		)
-	}
-
 	if completed {
 		t.Fatal("expected completed to be false")
 	}
-}
-
-func TestUpdaterSetTestCompletedSuiteRunning(t *testing.T) {
-	testRepository := &testExecutionRepository{
-		executions: []repository.TestExecution{
-			{
-				ID:         "test-execution-1",
-				Status:     string(model.ExecutionStatusPassed),
-				FinishedAt: time.Now(),
-			},
-			{
-				ID:     "test-execution-2",
-				Status: string(model.ExecutionStatusRunning),
-			},
-		},
-	}
-
-	suiteRepository := &testSuiteExecutionRepository{}
-
-	updater := NewUpdater(
-		testRepository,
-		suiteRepository,
-	)
-
-	completed, err := updater.SetTestCompleted(
-		context.Background(),
-		execute.TestExecutionResult{
-			ExecutionID:          "test-execution-1",
-			TestSuiteExecutionID: "suite-execution-1",
-			Status:               model.ExecutionStatusPassed,
-			FinishedAt:           time.Now(),
-		},
-	)
-	if err != nil {
-		t.Fatalf("SetTestCompleted() error = %v", err)
-	}
-
-	if completed {
-		t.Fatal(
-			"expected suite to remain incomplete",
-		)
-	}
-
-	if suiteRepository.completed != nil {
-		t.Fatal(
-			"expected suite SetCompleted() not to be called",
-		)
+	if !errors.Is(err, expected) {
+		t.Fatalf("got %v, want %v", err, expected)
 	}
 }
 
-func TestUpdaterSetTestCompletedSuiteScheduled(t *testing.T) {
-	testRepository := &testExecutionRepository{
-		executions: []repository.TestExecution{
-			{
-				Status: string(
-					model.ExecutionStatusPassed,
-				),
-				FinishedAt: time.Now(),
-			},
-			{
-				Status: string(
-					model.ExecutionStatusScheduled,
-				),
-			},
-		},
-	}
-
-	updater := NewUpdater(
-		testRepository,
-		&testSuiteExecutionRepository{},
+func TestUpdaterSetTestCompletedSuiteStates(t *testing.T) {
+	base := time.Date(
+		2026, 9, 18, 10, 0, 0, 0, time.UTC,
 	)
 
-	completed, err := updater.SetTestCompleted(
-		context.Background(),
-		execute.TestExecutionResult{
-			ExecutionID:          "test-execution-1",
-			TestSuiteExecutionID: "suite-execution-1",
-			Status:               model.ExecutionStatusPassed,
-			FinishedAt:           time.Now(),
-		},
-	)
-	if err != nil {
-		t.Fatalf("SetTestCompleted() error = %v", err)
-	}
+	stateErr := errors.New("get states")
+	completionErr := errors.New("set suite completed")
+	lookupErr := errors.New("get status")
 
-	if completed {
-		t.Fatal(
-			"expected suite to remain incomplete",
-		)
-	}
-}
+	testCases := []struct {
+		name string
 
-func TestUpdaterSetTestCompletedSuitePassed(t *testing.T) {
-	firstFinishedAt := time.Date(
-		2026, 9, 18, 10, 1, 0, 0, time.UTC,
-	)
-	secondFinishedAt := firstFinishedAt.Add(time.Minute)
+		states           []repository.TestSuiteExecutionState
+		alreadyCompleted bool
+		stateErr         error
 
-	testRepository := &testExecutionRepository{
-		executions: []repository.TestExecution{
-			{
-				Status: string(
-					model.ExecutionStatusPassed,
-				),
-				FinishedAt: firstFinishedAt,
-			},
-			{
-				Status: string(
-					model.ExecutionStatusPassed,
-				),
-				FinishedAt: secondFinishedAt,
-			},
-		},
-	}
+		completionErr  error
+		currentStatus  string
+		statusErr      error
+		shouldFinalize bool
+		shouldLookup   bool
 
-	suiteRepository := &testSuiteExecutionRepository{}
-
-	updater := NewUpdater(
-		testRepository,
-		suiteRepository,
-	)
-
-	completed, err := updater.SetTestCompleted(
-		context.Background(),
-		execute.TestExecutionResult{
-			ExecutionID:          "test-execution-2",
-			TestSuiteExecutionID: "suite-execution-1",
-			Status:               model.ExecutionStatusPassed,
-			FinishedAt:           secondFinishedAt,
-		},
-	)
-	if err != nil {
-		t.Fatalf("SetTestCompleted() error = %v", err)
-	}
-
-	if !completed {
-		t.Fatal("expected suite to be completed")
-	}
-
-	assertSuiteCompleted(
-		t,
-		suiteRepository.completed,
-		model.ExecutionStatusPassed,
-		secondFinishedAt,
-		model.TestSuiteExecutionSummary{
-			Total:  2,
-			Passed: 2,
-		},
-	)
-}
-
-func TestUpdaterSetTestCompletedSuiteFailed(t *testing.T) {
-	finishedAt := time.Date(
-		2026, 9, 18, 10, 2, 0, 0, time.UTC,
-	)
-
-	testRepository := &testExecutionRepository{
-		executions: []repository.TestExecution{
-			{
-				Status: string(
-					model.ExecutionStatusPassed,
-				),
-				FinishedAt: finishedAt.Add(-time.Minute),
-			},
-			{
-				Status: string(
-					model.ExecutionStatusFailed,
-				),
-				FinishedAt: finishedAt,
-			},
-		},
-	}
-
-	suiteRepository := &testSuiteExecutionRepository{}
-
-	updater := NewUpdater(
-		testRepository,
-		suiteRepository,
-	)
-
-	completed, err := updater.SetTestCompleted(
-		context.Background(),
-		execute.TestExecutionResult{
-			ExecutionID:          "test-execution-2",
-			TestSuiteExecutionID: "suite-execution-1",
-			Status:               model.ExecutionStatusFailed,
-			FinishedAt:           finishedAt,
-		},
-	)
-	if err != nil {
-		t.Fatalf("SetTestCompleted() error = %v", err)
-	}
-
-	if !completed {
-		t.Fatal("expected suite to be completed")
-	}
-
-	assertSuiteCompleted(
-		t,
-		suiteRepository.completed,
-		model.ExecutionStatusFailed,
-		finishedAt,
-		model.TestSuiteExecutionSummary{
-			Total:  2,
-			Passed: 1,
-			Failed: 1,
-		},
-	)
-}
-
-func TestUpdaterSetTestCompletedSuiteErrorPrecedence(
-	t *testing.T,
-) {
-	finishedAt := time.Date(
-		2026, 9, 18, 10, 3, 0, 0, time.UTC,
-	)
-
-	testRepository := &testExecutionRepository{
-		executions: []repository.TestExecution{
-			{
-				Status: string(
-					model.ExecutionStatusPassed,
-				),
-				FinishedAt: finishedAt.Add(-3 * time.Minute),
-			},
-			{
-				Status: string(
-					model.ExecutionStatusError,
-				),
-				FinishedAt: finishedAt.Add(-2 * time.Minute),
-			},
-			{
-				Status: string(
-					model.ExecutionStatusFailed,
-				),
-				FinishedAt: finishedAt,
-			},
-		},
-	}
-
-	suiteRepository := &testSuiteExecutionRepository{}
-
-	updater := NewUpdater(
-		testRepository,
-		suiteRepository,
-	)
-
-	completed, err := updater.SetTestCompleted(
-		context.Background(),
-		execute.TestExecutionResult{
-			ExecutionID:          "test-execution-3",
-			TestSuiteExecutionID: "suite-execution-1",
-			Status:               model.ExecutionStatusFailed,
-			FinishedAt:           finishedAt,
-		},
-	)
-	if err != nil {
-		t.Fatalf("SetTestCompleted() error = %v", err)
-	}
-
-	if !completed {
-		t.Fatal("expected suite to be completed")
-	}
-
-	assertSuiteCompleted(
-		t,
-		suiteRepository.completed,
-		model.ExecutionStatusError,
-		finishedAt,
-		model.TestSuiteExecutionSummary{
-			Total:  3,
-			Passed: 1,
-			Failed: 1,
-			Errors: 1,
-		},
-	)
-}
-
-func TestUpdaterSetTestCompletedInvalidStatus(t *testing.T) {
-	updater := NewUpdater(
-		&testExecutionRepository{
-			executions: []repository.TestExecution{
+		wantStatus    model.ExecutionStatus
+		wantFinished  time.Time
+		wantSummary   model.TestSuiteExecutionSummary
+		wantCompleted bool
+		wantErr       error
+	}{
+		{
+			name: "running",
+			states: []repository.TestSuiteExecutionState{
 				{
-					Status: "invalid",
+					Status:             "passed",
+					Count:              1,
+					LastTestFinishedAt: base,
+				},
+				{
+					Status: "running",
+					Count:  1,
 				},
 			},
 		},
-		&testSuiteExecutionRepository{},
-	)
-
-	completed, err := updater.SetTestCompleted(
-		context.Background(),
-		execute.TestExecutionResult{
-			ExecutionID:          "test-execution-1",
-			TestSuiteExecutionID: "suite-execution-1",
-			Status:               model.ExecutionStatusPassed,
+		{
+			name: "scheduled",
+			states: []repository.TestSuiteExecutionState{
+				{
+					Status: "scheduled",
+					Count:  1,
+				},
+				{
+					Status:             "passed",
+					Count:              1,
+					LastTestFinishedAt: base,
+				},
+			},
 		},
-	)
-
-	if !errors.Is(err, ErrInvalidExecutionStatus) {
-		t.Fatalf(
-			"expected ErrInvalidExecutionStatus, got %v",
-			err,
-		)
+		{
+			name: "empty",
+		},
+		{
+			name:             "already completed",
+			alreadyCompleted: true,
+		},
+		{
+			name:             "already completed skips states",
+			alreadyCompleted: true,
+			states: []repository.TestSuiteExecutionState{
+				{
+					Status:             "passed",
+					Count:              1,
+					LastTestFinishedAt: base,
+				},
+			},
+		},
+		{
+			name: "passed",
+			states: []repository.TestSuiteExecutionState{
+				{
+					Status:             "passed",
+					Count:              2,
+					LastTestFinishedAt: base.Add(2 * time.Minute),
+				},
+			},
+			wantStatus:     model.ExecutionStatusPassed,
+			wantFinished:   base.Add(2 * time.Minute),
+			wantSummary:    model.TestSuiteExecutionSummary{Total: 2, Passed: 2},
+			wantCompleted:  true,
+			shouldFinalize: true,
+		},
+		{
+			name: "failed",
+			states: []repository.TestSuiteExecutionState{
+				{
+					Status:             "passed",
+					Count:              1,
+					LastTestFinishedAt: base,
+				},
+				{
+					Status:             "failed",
+					Count:              2,
+					LastTestFinishedAt: base.Add(time.Minute),
+				},
+			},
+			wantStatus:     model.ExecutionStatusFailed,
+			wantFinished:   base.Add(time.Minute),
+			wantSummary:    model.TestSuiteExecutionSummary{Total: 3, Passed: 1, Failed: 2},
+			wantCompleted:  true,
+			shouldFinalize: true,
+		},
+		{
+			name: "error precedence",
+			states: []repository.TestSuiteExecutionState{
+				{
+					Status:             "error",
+					Count:              1,
+					LastTestFinishedAt: base,
+				},
+				{
+					Status:             "failed",
+					Count:              1,
+					LastTestFinishedAt: base.Add(3 * time.Minute),
+				},
+				{
+					Status:             "passed",
+					Count:              1,
+					LastTestFinishedAt: base.Add(time.Minute),
+				},
+			},
+			wantStatus:     model.ExecutionStatusError,
+			wantFinished:   base.Add(3 * time.Minute),
+			wantSummary:    model.TestSuiteExecutionSummary{Total: 3, Passed: 1, Failed: 1, Errors: 1},
+			wantCompleted:  true,
+			shouldFinalize: true,
+		},
+		{
+			name: "invalid status",
+			states: []repository.TestSuiteExecutionState{
+				{Status: "invalid", Count: 1},
+			},
+			wantErr: ErrInvalidExecutionStatus,
+		},
+		{
+			name: "missing finish time",
+			states: []repository.TestSuiteExecutionState{
+				{Status: "passed", Count: 1},
+			},
+			wantErr: ErrInvalidExecutionStatus,
+		},
+		{
+			name:     "states query error",
+			stateErr: stateErr,
+			wantErr:  stateErr,
+		},
+		{
+			name: "suite completion error",
+			states: []repository.TestSuiteExecutionState{
+				{
+					Status:             "passed",
+					Count:              1,
+					LastTestFinishedAt: base,
+				},
+			},
+			completionErr:  completionErr,
+			wantErr:        completionErr,
+			shouldFinalize: true,
+			wantStatus:     model.ExecutionStatusPassed,
+			wantFinished:   base,
+			wantSummary:    model.TestSuiteExecutionSummary{Total: 1, Passed: 1},
+		},
+		{
+			name: "concurrent suite completion",
+			states: []repository.TestSuiteExecutionState{
+				{
+					Status:             "passed",
+					Count:              1,
+					LastTestFinishedAt: base,
+				},
+			},
+			completionErr:  repository.ErrInvalidExecutionStateTransition,
+			currentStatus:  "passed",
+			shouldFinalize: true,
+			shouldLookup:   true,
+			wantStatus:     model.ExecutionStatusPassed,
+			wantFinished:   base,
+			wantSummary:    model.TestSuiteExecutionSummary{Total: 1, Passed: 1},
+		},
+		{
+			name: "concurrent suite completion failed",
+			states: []repository.TestSuiteExecutionState{
+				{
+					Status:             "passed",
+					Count:              1,
+					LastTestFinishedAt: base,
+				},
+			},
+			completionErr:  repository.ErrInvalidExecutionStateTransition,
+			currentStatus:  "failed",
+			shouldFinalize: true,
+			shouldLookup:   true,
+			wantStatus:     model.ExecutionStatusPassed,
+			wantFinished:   base,
+			wantSummary:    model.TestSuiteExecutionSummary{Total: 1, Passed: 1},
+		},
+		{
+			name: "rejected while running",
+			states: []repository.TestSuiteExecutionState{
+				{
+					Status:             "passed",
+					Count:              1,
+					LastTestFinishedAt: base,
+				},
+			},
+			completionErr:  repository.ErrInvalidExecutionStateTransition,
+			currentStatus:  "running",
+			wantErr:        repository.ErrInvalidExecutionStateTransition,
+			shouldFinalize: true,
+			shouldLookup:   true,
+			wantStatus:     model.ExecutionStatusPassed,
+			wantFinished:   base,
+			wantSummary:    model.TestSuiteExecutionSummary{Total: 1, Passed: 1},
+		},
+		{
+			name: "status lookup error",
+			states: []repository.TestSuiteExecutionState{
+				{
+					Status:             "passed",
+					Count:              1,
+					LastTestFinishedAt: base,
+				},
+			},
+			completionErr:  repository.ErrInvalidExecutionStateTransition,
+			statusErr:      lookupErr,
+			wantErr:        lookupErr,
+			shouldFinalize: true,
+			shouldLookup:   true,
+			wantStatus:     model.ExecutionStatusPassed,
+			wantFinished:   base,
+			wantSummary:    model.TestSuiteExecutionSummary{Total: 1, Passed: 1},
+		},
 	}
 
-	if completed {
-		t.Fatal("expected completed to be false")
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			tests := mock.NewMockTestExecutionRepository(ctrl)
+			suites := mock.NewMockTestSuiteExecutionRepository(ctrl)
+
+			tests.EXPECT().
+				SetCompleted(gomock.Any(), gomock.Any()).
+				Return(nil)
+
+			tests.EXPECT().
+				GetTestSuiteExecutionStates(
+					gomock.Any(),
+					suiteExecutionID,
+				).
+				Return(tc.states, tc.alreadyCompleted, tc.stateErr)
+
+			if tc.shouldFinalize {
+				suites.EXPECT().
+					SetCompleted(gomock.Any(), gomock.Any()).
+					DoAndReturn(
+						func(
+							_ any,
+							params *repository.SetCompletedParams,
+						) error {
+							assertSuiteCompleted(
+								t,
+								params,
+								tc.wantStatus,
+								tc.wantFinished,
+								tc.wantSummary,
+							)
+							return tc.completionErr
+						},
+					)
+			}
+
+			if tc.shouldLookup {
+				suites.EXPECT().
+					GetStatus(gomock.Any(), suiteExecutionID).
+					Return(tc.currentStatus, tc.statusErr)
+			}
+
+			completed, err := NewUpdater(tests, suites).
+				SetTestCompleted(
+					t.Context(),
+					execute.TestExecutionResult{
+						ExecutionID:          testExecutionID,
+						TestSuiteExecutionID: suiteExecutionID,
+						Status:               model.ExecutionStatusPassed,
+						FinishedAt:           base,
+					},
+				)
+
+			if completed != tc.wantCompleted {
+				t.Errorf(
+					"completed=%v, want %v",
+					completed,
+					tc.wantCompleted,
+				)
+			}
+
+			if tc.wantErr == nil && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
+				t.Fatalf(
+					"error=%v, want %v",
+					err,
+					tc.wantErr,
+				)
+			}
+		})
 	}
 }
 
-func TestUpdaterSetTestCompletedGetSuiteExecutionsError(
-	t *testing.T,
-) {
-	expectedErr := errors.New("get executions")
+func TestUpdaterTryCompleteTestSuite(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	tests := mock.NewMockTestExecutionRepository(ctrl)
+	suites := mock.NewMockTestSuiteExecutionRepository(ctrl)
 
-	updater := NewUpdater(
-		&testExecutionRepository{
-			getErr: expectedErr,
-		},
-		&testSuiteExecutionRepository{},
-	)
+	tests.EXPECT().
+		GetTestSuiteExecutionStates(
+			gomock.Any(),
+			suiteExecutionID,
+		).
+		Return(nil, true, nil)
 
-	completed, err := updater.SetTestCompleted(
-		context.Background(),
-		execute.TestExecutionResult{
-			ExecutionID:          "test-execution-1",
-			TestSuiteExecutionID: "suite-execution-1",
-			Status:               model.ExecutionStatusPassed,
-		},
-	)
+	completed, err := NewUpdater(tests, suites).
+		TryCompleteTestSuite(t.Context(), suiteExecutionID)
 
-	if !errors.Is(err, expectedErr) {
-		t.Fatalf(
-			"expected error %v, got %v",
-			expectedErr,
-			err,
-		)
-	}
-
-	if completed {
-		t.Fatal("expected completed to be false")
+	if err != nil || completed {
+		t.Fatalf("completed=%v, err=%v", completed, err)
 	}
 }
 
@@ -637,111 +612,112 @@ func TestUpdaterSetTestSuiteCompleted(t *testing.T) {
 		Passed: 3,
 	}
 
-	suiteRepository := &testSuiteExecutionRepository{}
-	updater := NewUpdater(
-		&testExecutionRepository{},
-		suiteRepository,
-	)
+	ctrl := gomock.NewController(t)
+	suites := mock.NewMockTestSuiteExecutionRepository(ctrl)
 
-	completed, err := updater.SetTestSuiteCompleted(
-		context.Background(),
+	suites.EXPECT().
+		SetCompleted(gomock.Any(), gomock.Any()).
+		DoAndReturn(
+			func(
+				_ any,
+				params *repository.SetCompletedParams,
+			) error {
+				assertSuiteCompleted(
+					t,
+					params,
+					model.ExecutionStatusPassed,
+					finishedAt,
+					*summary,
+				)
+				return nil
+			},
+		)
+
+	completed, err := NewUpdater(
+		mock.NewMockTestExecutionRepository(ctrl),
+		suites,
+	).SetTestSuiteCompleted(
+		t.Context(),
 		execute.TestSuiteExecutionResult{
-			ExecutionID: "suite-execution-1",
+			ExecutionID: suiteExecutionID,
 			Status:      model.ExecutionStatusPassed,
 			FinishedAt:  finishedAt,
 			Summary:     summary,
 		},
 	)
-	if err != nil {
-		t.Fatalf(
-			"SetTestSuiteCompleted() error = %v",
-			err,
-		)
-	}
 
-	if !completed {
-		t.Fatal("expected completed to be true")
+	if err != nil || !completed {
+		t.Fatalf("completed=%v, err=%v", completed, err)
 	}
-
-	assertSuiteCompleted(
-		t,
-		suiteRepository.completed,
-		model.ExecutionStatusPassed,
-		finishedAt,
-		*summary,
-	)
 }
 
-func TestUpdaterSetTestSuiteCompletedNilSummary(
-	t *testing.T,
-) {
-	suiteRepository := &testSuiteExecutionRepository{}
-	updater := NewUpdater(
-		&testExecutionRepository{},
-		suiteRepository,
-	)
+func TestUpdaterSetTestSuiteCompletedNilSummary(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	suites := mock.NewMockTestSuiteExecutionRepository(ctrl)
 
-	completed, err := updater.SetTestSuiteCompleted(
-		context.Background(),
+	suites.EXPECT().
+		SetCompleted(gomock.Any(), gomock.Any()).
+		DoAndReturn(
+			func(
+				_ any,
+				params *repository.SetCompletedParams,
+			) error {
+				if params.Summary != nil {
+					t.Errorf(
+						"expected nil summary, got %s",
+						params.Summary,
+					)
+				}
+				return nil
+			},
+		)
+
+	completed, err := NewUpdater(
+		mock.NewMockTestExecutionRepository(ctrl),
+		suites,
+	).SetTestSuiteCompleted(
+		t.Context(),
 		execute.TestSuiteExecutionResult{
-			ExecutionID: "suite-execution-1",
+			ExecutionID: suiteExecutionID,
 			Status:      model.ExecutionStatusError,
 			FinishedAt:  time.Now(),
 		},
 	)
-	if err != nil {
-		t.Fatalf(
-			"SetTestSuiteCompleted() error = %v",
-			err,
-		)
-	}
 
-	if !completed {
-		t.Fatal("expected completed to be true")
-	}
-
-	if suiteRepository.completed.Summary != nil {
-		t.Errorf(
-			"expected nil summary, got %s",
-			suiteRepository.completed.Summary,
-		)
+	if err != nil || !completed {
+		t.Fatalf("completed=%v, err=%v", completed, err)
 	}
 }
 
 func TestUpdaterSetTestSuiteCompletedError(t *testing.T) {
-	expectedErr := errors.New("set suite completed")
+	expected := errors.New("set suite completed")
 
-	updater := NewUpdater(
-		&testExecutionRepository{},
-		&testSuiteExecutionRepository{
-			setCompletedErr: expectedErr,
-		},
-	)
+	ctrl := gomock.NewController(t)
+	suites := mock.NewMockTestSuiteExecutionRepository(ctrl)
 
-	completed, err := updater.SetTestSuiteCompleted(
-		context.Background(),
+	suites.EXPECT().
+		SetCompleted(gomock.Any(), gomock.Any()).
+		Return(expected)
+
+	completed, err := NewUpdater(
+		mock.NewMockTestExecutionRepository(ctrl),
+		suites,
+	).SetTestSuiteCompleted(
+		t.Context(),
 		execute.TestSuiteExecutionResult{
-			ExecutionID: "suite-execution-1",
+			ExecutionID: suiteExecutionID,
 			Status:      model.ExecutionStatusError,
 		},
 	)
 
-	if !errors.Is(err, expectedErr) {
-		t.Fatalf(
-			"expected error %v, got %v",
-			expectedErr,
-			err,
-		)
-	}
-
-	if completed {
-		t.Fatal("expected completed to be false")
+	if completed || !errors.Is(err, expected) {
+		t.Fatalf("completed=%v, err=%v", completed, err)
 	}
 }
 
 func assertSuiteCompleted(
 	t *testing.T,
-	params *SetCompletedParams,
+	params *repository.SetCompletedParams,
 	status model.ExecutionStatus,
 	finishedAt time.Time,
 	expectedSummary model.TestSuiteExecutionSummary,
@@ -749,109 +725,46 @@ func assertSuiteCompleted(
 	t.Helper()
 
 	if params == nil {
-		t.Fatal(
-			"expected suite SetCompleted() to be called",
+		t.Fatal("expected suite SetCompleted parameters")
+	}
+
+	if params.ID != suiteExecutionID {
+		t.Errorf(
+			"ID=%q, want %q",
+			params.ID,
+			suiteExecutionID,
 		)
 	}
 
 	if params.Status != string(status) {
 		t.Errorf(
-			"expected status %s, got %s",
-			status,
+			"status=%q, want %q",
 			params.Status,
+			status,
 		)
 	}
 
 	if !params.FinishedAt.Equal(finishedAt) {
 		t.Errorf(
-			"expected FinishedAt %v, got %v",
-			finishedAt,
+			"FinishedAt=%v, want %v",
 			params.FinishedAt,
+			finishedAt,
 		)
 	}
 
-	var actualSummary model.TestSuiteExecutionSummary
+	var actual model.TestSuiteExecutionSummary
 	if err := json.Unmarshal(
 		params.Summary,
-		&actualSummary,
+		&actual,
 	); err != nil {
-		t.Fatalf(
-			"cannot unmarshal suite summary: %v",
-			err,
-		)
+		t.Fatalf("unmarshal summary: %v", err)
 	}
 
-	if actualSummary != expectedSummary {
+	if actual != expectedSummary {
 		t.Errorf(
-			"expected summary %+v, got %+v",
+			"summary=%+v, want %+v",
+			actual,
 			expectedSummary,
-			actualSummary,
 		)
 	}
-}
-
-type testExecutionRepository struct {
-	executions []repository.TestExecution
-
-	running   *SetRunningParams
-	completed *SetCompletedParams
-
-	getErr          error
-	setRunningErr   error
-	setCompletedErr error
-}
-
-func (r *testExecutionRepository) GetByTestSuiteExecutionID(
-	_ context.Context,
-	_ string,
-) ([]repository.TestExecution, error) {
-	if r.getErr != nil {
-		return nil, r.getErr
-	}
-
-	return r.executions, nil
-}
-
-func (r *testExecutionRepository) SetRunning(
-	_ context.Context,
-	params *SetRunningParams,
-) error {
-	r.running = params
-
-	return r.setRunningErr
-}
-
-func (r *testExecutionRepository) SetCompleted(
-	_ context.Context,
-	params *SetCompletedParams,
-) error {
-	r.completed = params
-
-	return r.setCompletedErr
-}
-
-type testSuiteExecutionRepository struct {
-	running   *SetRunningParams
-	completed *SetCompletedParams
-
-	setRunningErr   error
-	setCompletedErr error
-}
-
-func (r *testSuiteExecutionRepository) SetRunning(
-	_ context.Context,
-	params *SetRunningParams,
-) error {
-	r.running = params
-
-	return r.setRunningErr
-}
-
-func (r *testSuiteExecutionRepository) SetCompleted(
-	_ context.Context,
-	params *SetCompletedParams,
-) error {
-	r.completed = params
-
-	return r.setCompletedErr
 }

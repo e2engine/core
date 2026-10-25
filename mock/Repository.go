@@ -300,18 +300,18 @@ func (mr *MockTestRepositoryMockRecorder) Get(ctx, id any) *gomock.Call {
 }
 
 // GetByTag mocks base method.
-func (m *MockTestRepository) GetByTag(ctx context.Context, tag string) ([]repository.Test, error) {
+func (m *MockTestRepository) GetByTag(ctx context.Context, tag string, limit int) ([]repository.Test, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetByTag", ctx, tag)
+	ret := m.ctrl.Call(m, "GetByTag", ctx, tag, limit)
 	ret0, _ := ret[0].([]repository.Test)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetByTag indicates an expected call of GetByTag.
-func (mr *MockTestRepositoryMockRecorder) GetByTag(ctx, tag any) *gomock.Call {
+func (mr *MockTestRepositoryMockRecorder) GetByTag(ctx, tag, limit any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByTag", reflect.TypeOf((*MockTestRepository)(nil).GetByTag), ctx, tag)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetByTag", reflect.TypeOf((*MockTestRepository)(nil).GetByTag), ctx, tag, limit)
 }
 
 // GetIDsByID mocks base method.
@@ -471,6 +471,22 @@ func (m *MockTestExecutionRepository) GetStatus(ctx context.Context, id string) 
 func (mr *MockTestExecutionRepositoryMockRecorder) GetStatus(ctx, id any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStatus", reflect.TypeOf((*MockTestExecutionRepository)(nil).GetStatus), ctx, id)
+}
+
+// GetTestSuiteExecutionStates mocks base method.
+func (m *MockTestExecutionRepository) GetTestSuiteExecutionStates(ctx context.Context, testSuiteExecutionID string) ([]repository.TestSuiteExecutionState, bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetTestSuiteExecutionStates", ctx, testSuiteExecutionID)
+	ret0, _ := ret[0].([]repository.TestSuiteExecutionState)
+	ret1, _ := ret[1].(bool)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// GetTestSuiteExecutionStates indicates an expected call of GetTestSuiteExecutionStates.
+func (mr *MockTestExecutionRepositoryMockRecorder) GetTestSuiteExecutionStates(ctx, testSuiteExecutionID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetTestSuiteExecutionStates", reflect.TypeOf((*MockTestExecutionRepository)(nil).GetTestSuiteExecutionStates), ctx, testSuiteExecutionID)
 }
 
 // List mocks base method.

@@ -144,10 +144,8 @@ func (s *Controller) getTestID(
 	)
 }
 
-func (s *Controller) GetTestsByTag(ctx context.Context, tag string) ([]model.Test, error) {
-	// TODO: Bound GetTestsByTag() at the repository level to MaxResolvedTests + 1,
-	//  while retaining the final unique-test count validation.
-	tests, err := s.test.GetByTag(ctx, tag)
+func (s *Controller) GetTestsByTag(ctx context.Context, tag string, limit int) ([]model.Test, error) {
+	tests, err := s.test.GetByTag(ctx, tag, limit)
 	if err != nil {
 		return nil, err
 	}
