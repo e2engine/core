@@ -20,6 +20,3 @@ jobs:
 
       - name: Verify
         run: make verify
-
-      - name: Verify
-        run: make verify
