@@ -140,7 +140,10 @@ func (s *RealGRPCService) Unmount(ctx context.Context) error {
 		s.server.Stop()
 
 		if s.connection != nil {
-			_ = s.connection.Close()
+			return nativeerrors.Join(
+				ctx.Err(),
+				s.connection.Close(),
+			)
 		}
 
 		return ctx.Err()

@@ -1,10 +1,13 @@
 package grpc
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"hash"
+	"io"
+	"path/filepath"
 	"sync"
 
 	"github.com/bufbuild/protocompile"
@@ -123,29 +126,47 @@ func (r *ProtoMethodResolver) loadFile(
 	ctx context.Context,
 	path string,
 ) (*protoregistry.Files, error) {
-	if err := util.ValidateFilePath(path); err != nil {
-		return nil, err
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, errorc.With(
+			errors.ErrCannotLoadGRPCProto,
+			errorc.String(keys.FilePath, path),
+			errorc.Error(keys.Cause, err),
+		)
+	}
+
+	if errValidate := util.ValidateFilePath(absolutePath); errValidate != nil {
+		return nil, errValidate
 	}
 
 	r.mu.RLock()
-	files := r.files[path]
+	files := r.files[absolutePath]
 	r.mu.RUnlock()
 
 	if files != nil {
 		return files, nil
 	}
 
-	// TODO: use a controlled resolver that opens and validates protobuf files
-	// through the shared file-loading abstraction, including imported files.
+	root := filepath.Dir(absolutePath)
+
 	compiler := protocompile.Compiler{
 		Resolver: protocompile.WithStandardImports(
-			&protocompile.SourceResolver{},
+			&protocompile.SourceResolver{
+				Accessor: func(name string) (io.ReadCloser, error) {
+					data, errRead := util.ReadFileWithinRoot(root, name)
+					if errRead != nil {
+						return nil, errRead
+					}
+
+					return io.NopCloser(bytes.NewReader(data)), nil
+				},
+			},
 		),
 	}
 
 	compiled, err := compiler.Compile(
 		ctx,
-		path,
+		filepath.Base(absolutePath),
 	)
 	if err != nil {
 		return nil, errorc.With(
@@ -163,10 +184,7 @@ func (r *ProtoMethodResolver) loadFile(
 			return nil, errorc.With(
 				errors.ErrCannotLoadGRPCProto,
 				errorc.String(keys.FilePath, path),
-				errorc.String(
-					keys.Operation,
-					"register protobuf file",
-				),
+				errorc.String(keys.Operation, "register protobuf file"),
 				errorc.Error(keys.Cause, err),
 			)
 		}
@@ -174,10 +192,10 @@ func (r *ProtoMethodResolver) loadFile(
 
 	r.mu.Lock()
 
-	if existing := r.files[path]; existing != nil {
+	if existing := r.files[absolutePath]; existing != nil {
 		files = existing
 	} else {
-		r.files[path] = files
+		r.files[absolutePath] = files
 	}
 
 	r.mu.Unlock()

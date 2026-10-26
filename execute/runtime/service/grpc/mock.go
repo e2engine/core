@@ -169,9 +169,7 @@ func (s *MockGRPCService) handle(
 	_ any,
 	stream ggrpc.ServerStream,
 ) error {
-	fullMethod, ok := ggrpc.MethodFromServerStream(
-		stream,
-	)
+	fullMethod, ok := ggrpc.MethodFromServerStream(stream)
 	if !ok {
 		return status.Error(
 			codes.Internal,
@@ -201,17 +199,13 @@ func (s *MockGRPCService) handle(
 		)
 	}
 
-	request := dynamicpb.NewMessage(
-		method.Input(),
-	)
+	request := dynamicpb.NewMessage(method.Input())
 
 	if errRecv := stream.RecvMsg(request); errRecv != nil {
 		return errRecv
 	}
 
-	incomingMetadata, _ := metadata.FromIncomingContext(
-		stream.Context(),
-	)
+	incomingMetadata, _ := metadata.FromIncomingContext(stream.Context())
 
 	fixture, err := s.match(
 		fullMethod,
@@ -219,6 +213,11 @@ func (s *MockGRPCService) handle(
 		incomingMetadata,
 	)
 	if err != nil {
+		s.logger.Error(
+			"Failed to match gRPC request",
+			log.String(keys.GRPCMethod, fullMethod),
+		)
+
 		return status.Error(
 			codes.Internal,
 			"failed to match gRPC request",
@@ -231,9 +230,7 @@ func (s *MockGRPCService) handle(
 			log.String(keys.GRPCMethod, fullMethod),
 		)
 
-		stream.SetTrailer(
-			metadata.Pairs(string(keys.E2EngineMockMissMetadata), "true"),
-		)
+		stream.SetTrailer(metadata.Pairs(string(keys.E2EngineMockMissMetadata), "true"))
 
 		return status.Error(
 			codes.Unimplemented,
@@ -272,7 +269,6 @@ func (s *MockGRPCService) handle(
 			"Failed to build gRPC mock response",
 			log.String(keys.GRPCMethod, fullMethod),
 		)
-		// TODO: log more information from the error.
 
 		return status.Error(
 			codes.Internal,

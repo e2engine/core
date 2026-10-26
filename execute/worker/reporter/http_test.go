@@ -370,6 +370,87 @@ func TestReporterAddHTTPRequestQueryRedaction(t *testing.T) {
 	}
 }
 
+func TestReporterAddHTTPRequestUserinfoRedaction(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		url  string
+		want string
+	}{
+		{
+			name: "password and sensitive query",
+			url:  "http://admin:secret123@example.com/resource?access_token=abc123&limit=10",
+			want: "http://admin:%3Credacted%3E@example.com/resource?access_token=%3Credacted%3E&limit=10",
+		},
+		{
+			name: "password without query",
+			url:  "http://admin:secret123@example.com/resource",
+			want: "http://admin:%3Credacted%3E@example.com/resource",
+		},
+		{
+			name: "empty password",
+			url:  "http://admin:@example.com/resource",
+			want: "http://admin:%3Credacted%3E@example.com/resource",
+		},
+		{
+			name: "username only",
+			url:  "http://admin@example.com/resource",
+			want: "http://admin@example.com/resource",
+		},
+		{
+			name: "redaction disabled",
+			cfg: Config{
+				SkipRedactingQueryParams: true,
+			},
+			url:  "http://admin:secret123@example.com/resource?access_token=abc123",
+			want: "http://admin:secret123@example.com/resource?access_token=abc123",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := newReporterForTest(
+				&tt.cfg,
+				&model.TestSpec{
+					Request: model.RequestSpec{
+						HTTP: &model.HTTPRequest{},
+					},
+				},
+			)
+
+			req, err := http.NewRequest(
+				http.MethodGet,
+				tt.url,
+				nil,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			originalURL := req.URL.String()
+
+			r.AddHTTPRequest(req)
+
+			if got := r.Result().Summary.Request.HTTP.URL; got != tt.want {
+				t.Errorf(
+					"reported URL: got %q, want %q",
+					got,
+					tt.want,
+				)
+			}
+
+			// Reporting must not modify the outgoing request.
+			if got := req.URL.String(); got != originalURL {
+				t.Errorf(
+					"request URL modified: got %q, want %q",
+					got,
+					originalURL,
+				)
+			}
+		})
+	}
+}
+
 func TestReporterAddHTTPRequestURLWithoutQuery(t *testing.T) {
 	r := newReporterForTest(
 		&Config{},

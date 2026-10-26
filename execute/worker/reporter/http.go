@@ -178,8 +178,18 @@ func (r *Reporter) redactURL(u *url.URL) string {
 
 	redactedURL := *u
 
-	query := redactedURL.Query()
 	changed := false
+
+	if redactedURL.User != nil {
+		username := redactedURL.User.Username()
+
+		if _, hasPassword := redactedURL.User.Password(); hasPassword {
+			redactedURL.User = url.UserPassword(username, redacted)
+			changed = true
+		}
+	}
+
+	query := redactedURL.Query()
 
 	for key, values := range query {
 		if _, ok := r.redactedQueryParams[strings.ToLower(key)]; ok {

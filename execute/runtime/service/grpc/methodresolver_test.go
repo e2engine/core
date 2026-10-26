@@ -13,6 +13,7 @@ import (
 
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/pkg/errors"
+	"github.com/e2engine/core/util"
 )
 
 func TestProtoMethodResolverResolveExternalModule(t *testing.T) {
@@ -749,6 +750,300 @@ func TestInternalContractKey(t *testing.T) {
 				)
 			}
 		})
+	}
+}
+
+func TestProtoMethodResolverResolveExternalFileImports(t *testing.T) {
+	tests := []struct {
+		name    string
+		proto   string
+		imports map[string]string
+	}{
+		{
+			name: "nested import",
+			proto: `
+syntax = "proto3";
+package users.v1;
+
+import "common/types.proto";
+
+service UserService {
+    rpc GetUser(GetUserRequest) returns (GetUserResponse);
+}
+`,
+			imports: map[string]string{
+				"common/types.proto": `
+syntax = "proto3";
+package users.v1;
+
+message GetUserRequest {
+    string id = 1;
+}
+
+message GetUserResponse {
+    string name = 1;
+}
+`,
+			},
+		},
+		{
+			name: "standard protobuf import",
+			proto: `
+syntax = "proto3";
+package users.v1;
+
+import "google/protobuf/timestamp.proto";
+
+service UserService {
+    rpc GetUser(GetUserRequest) returns (GetUserResponse);
+}
+
+message GetUserRequest {
+    string id = 1;
+}
+
+message GetUserResponse {
+    google.protobuf.Timestamp created_at = 1;
+}
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+
+			for name, content := range tt.imports {
+				path := filepath.Join(dir, name)
+
+				if err := os.MkdirAll(
+					filepath.Dir(path),
+					0o700,
+				); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := os.WriteFile(
+					path,
+					[]byte(content),
+					0o600,
+				); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			path := filepath.Join(dir, "users.proto")
+
+			if err := os.WriteFile(
+				path,
+				[]byte(tt.proto),
+				0o600,
+			); err != nil {
+				t.Fatal(err)
+			}
+
+			resolver := NewProtoMethodResolver(nil)
+
+			spec := &model.GRPCProtoSpec{
+				External: &model.GRPCExternalProtoSpec{
+					File:    path,
+					Service: "users.v1.UserService",
+				},
+			}
+
+			method, err := resolver.ResolveMethod(
+				context.Background(),
+				spec,
+				"GetUser",
+			)
+			if err != nil {
+				t.Fatalf("ResolveMethod() error = %v", err)
+			}
+
+			if method.FullName() != "users.v1.UserService.GetUser" {
+				t.Errorf(
+					"unexpected method: %s",
+					method.FullName(),
+				)
+			}
+		})
+	}
+}
+
+func TestProtoMethodResolverResolveExternalFileSecurity(t *testing.T) {
+	tests := []struct {
+		name          string
+		importPath    string
+		setup         func(t *testing.T, root, parent string)
+		expectedError error
+	}{
+		{
+			name:       "parent directory traversal",
+			importPath: "../secret.proto",
+			setup: func(t *testing.T, root, parent string) {
+				if err := os.WriteFile(
+					filepath.Join(parent, "secret.proto"),
+					[]byte(`
+syntax = "proto3";
+package users.v1;
+message Secret {}
+`),
+					0o600,
+				); err != nil {
+					t.Fatal(err)
+				}
+			},
+			expectedError: errors.ErrCannotLoadGRPCProto,
+		},
+		{
+			name:       "symlink escaping root",
+			importPath: "secret.proto",
+			setup: func(t *testing.T, root, parent string) {
+				outside := filepath.Join(parent, "secret.proto")
+
+				if err := os.WriteFile(
+					outside,
+					[]byte(`
+syntax = "proto3";
+package users.v1;
+message Secret {}
+`),
+					0o600,
+				); err != nil {
+					t.Fatal(err)
+				}
+
+				if err := os.Symlink(
+					outside,
+					filepath.Join(root, "secret.proto"),
+				); err != nil {
+					t.Fatal(err)
+				}
+			},
+			expectedError: errors.ErrCannotLoadGRPCProto,
+		},
+		{
+			name:       "oversized imported file",
+			importPath: "large.proto",
+			setup: func(t *testing.T, root, parent string) {
+				path := filepath.Join(root, "large.proto")
+
+				file, err := os.Create(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer file.Close()
+
+				if err := file.Truncate(
+					util.MaxFileSize + 1,
+				); err != nil {
+					t.Fatal(err)
+				}
+			},
+			expectedError: errors.ErrCannotLoadGRPCProto,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parent := t.TempDir()
+			root := filepath.Join(parent, "proto")
+
+			if err := os.Mkdir(root, 0o700); err != nil {
+				t.Fatal(err)
+			}
+
+			tt.setup(t, root, parent)
+
+			source := `
+syntax = "proto3";
+package users.v1;
+
+import "` + tt.importPath + `";
+
+service UserService {
+    rpc GetUser(GetUserRequest) returns (GetUserResponse);
+}
+
+message GetUserRequest {}
+message GetUserResponse {}
+`
+
+			path := filepath.Join(root, "users.proto")
+
+			if err := os.WriteFile(
+				path,
+				[]byte(source),
+				0o600,
+			); err != nil {
+				t.Fatal(err)
+			}
+
+			resolver := NewProtoMethodResolver(nil)
+
+			spec := &model.GRPCProtoSpec{
+				External: &model.GRPCExternalProtoSpec{
+					File:    path,
+					Service: "users.v1.UserService",
+				},
+			}
+
+			_, err := resolver.ResolveMethod(
+				context.Background(),
+				spec,
+				"GetUser",
+			)
+
+			if !nativeerrors.Is(err, tt.expectedError) {
+				t.Errorf(
+					"expected error %v, got %v",
+					tt.expectedError,
+					err,
+				)
+			}
+		})
+	}
+}
+
+func TestProtoMethodResolverResolveExternalFileTooLarge(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "large.proto")
+
+	file, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := file.Truncate(util.MaxFileSize + 1); err != nil {
+		_ = file.Close()
+		t.Fatal(err)
+	}
+
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	resolver := NewProtoMethodResolver(nil)
+
+	spec := &model.GRPCProtoSpec{
+		External: &model.GRPCExternalProtoSpec{
+			File:    path,
+			Service: "users.v1.UserService",
+		},
+	}
+
+	_, err = resolver.ResolveMethod(
+		context.Background(),
+		spec,
+		"GetUser",
+	)
+
+	if !nativeerrors.Is(err, errors.ErrInaccessiblePath) {
+		t.Errorf(
+			"expected error %v, got %v",
+			errors.ErrInaccessiblePath,
+			err,
+		)
 	}
 }
 
