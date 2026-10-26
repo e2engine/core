@@ -81,7 +81,7 @@ func (l *Launcher) StartTest(
 
 	exe := &repository.TestExecution{
 		ID:              id,
-		Status:          string(model.ExecutionStatusScheduled),
+		Status:          repository.ExecutionStatusScheduled,
 		EnvironmentID:   req.Environment.ID,
 		EnvironmentName: req.Environment.Name,
 		TestID:          req.Test.ID,
@@ -141,7 +141,7 @@ func (l *Launcher) StartTestSuite(
 
 	exe := &repository.TestSuiteExecution{
 		ID:              id,
-		Status:          string(model.ExecutionStatusScheduled),
+		Status:          repository.ExecutionStatusScheduled,
 		EnvironmentID:   req.Environment.ID,
 		EnvironmentName: req.Environment.Name,
 		TestSuiteID:     req.TestSuite.ID,
@@ -242,7 +242,7 @@ func (l *Launcher) createTestJobs(
 		testExecution := &repository.TestExecution{
 			ID:                   testExecutionID,
 			TestSuiteExecutionID: executionID,
-			Status:               string(model.ExecutionStatusScheduled),
+			Status:               repository.ExecutionStatusScheduled,
 			EnvironmentID:        environment.ID,
 			EnvironmentName:      environment.Name,
 			TestID:               test.ID,

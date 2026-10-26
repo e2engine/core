@@ -140,7 +140,7 @@ func TestLauncherStartTest(t *testing.T) {
 			_ context.Context,
 			execution *repository.TestExecution,
 		) (*repository.TestExecution, error) {
-			if execution.Status != string(model.ExecutionStatusScheduled) {
+			if execution.Status != repository.ExecutionStatusScheduled {
 				t.Errorf(
 					"status = %q, want %q",
 					execution.Status,
