@@ -459,10 +459,10 @@ func (mr *MockTestExecutionRepositoryMockRecorder) GetIDsByID(ctx, id any) *gomo
 }
 
 // GetStatus mocks base method.
-func (m *MockTestExecutionRepository) GetStatus(ctx context.Context, id string) (string, error) {
+func (m *MockTestExecutionRepository) GetStatus(ctx context.Context, id string) (repository.ExecutionStatus, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetStatus", ctx, id)
-	ret0, _ := ret[0].(string)
+	ret0, _ := ret[0].(repository.ExecutionStatus)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -617,10 +617,10 @@ func (mr *MockTestSuiteExecutionRepositoryMockRecorder) GetIDsByID(ctx, id any) 
 }
 
 // GetStatus mocks base method.
-func (m *MockTestSuiteExecutionRepository) GetStatus(ctx context.Context, id string) (string, error) {
+func (m *MockTestSuiteExecutionRepository) GetStatus(ctx context.Context, id string) (repository.ExecutionStatus, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetStatus", ctx, id)
-	ret0, _ := ret[0].(string)
+	ret0, _ := ret[0].(repository.ExecutionStatus)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

@@ -532,7 +532,7 @@ func TestControllerGetTestExecutionStatus(t *testing.T) {
 
 				repo.EXPECT().
 					GetStatus(gomock.Any(), id).
-					Return(string(model.ExecutionStatusPassed), nil)
+					Return(repository.ExecutionStatusPassed, nil)
 			},
 			expectedStatus: model.ExecutionStatusPassed,
 		},
@@ -575,7 +575,7 @@ func TestControllerGetTestExecutionStatus(t *testing.T) {
 
 				repo.EXPECT().
 					GetStatus(gomock.Any(), id).
-					Return("", repository.ErrNotFound)
+					Return(repository.ExecutionStatus(""), repository.ErrNotFound)
 			},
 			expectedError: coreerrors.ErrEntityNotFound,
 		},
@@ -590,7 +590,7 @@ func TestControllerGetTestExecutionStatus(t *testing.T) {
 
 				repo.EXPECT().
 					GetStatus(gomock.Any(), id).
-					Return("", errGetTestExecutionStatus)
+					Return(repository.ExecutionStatus(""), errGetTestExecutionStatus)
 			},
 			expectedError: errGetTestExecutionStatus,
 		},

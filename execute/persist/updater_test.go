@@ -143,7 +143,7 @@ func TestUpdaterSetTestCompletedStandalone(t *testing.T) {
 					t.Errorf("unexpected execution ID: %s", params.ID)
 				}
 
-				if params.Status != string(model.ExecutionStatusError) {
+				if params.Status != repository.ExecutionStatusError {
 					t.Errorf("unexpected status: %s", params.Status)
 				}
 
@@ -282,7 +282,7 @@ func TestUpdaterSetTestCompletedSuiteStates(t *testing.T) {
 		stateErr         error
 
 		completionErr  error
-		currentStatus  string
+		currentStatus  repository.ExecutionStatus
 		statusErr      error
 		shouldFinalize bool
 		shouldLookup   bool
@@ -297,12 +297,12 @@ func TestUpdaterSetTestCompletedSuiteStates(t *testing.T) {
 			name: "running",
 			states: []repository.TestSuiteExecutionState{
 				{
-					Status:             "passed",
+					Status:             repository.ExecutionStatusPassed,
 					Count:              1,
 					LastTestFinishedAt: base,
 				},
 				{
-					Status: "running",
+					Status: repository.ExecutionStatusRunning,
 					Count:  1,
 				},
 			},
@@ -311,11 +311,11 @@ func TestUpdaterSetTestCompletedSuiteStates(t *testing.T) {
 			name: "scheduled",
 			states: []repository.TestSuiteExecutionState{
 				{
-					Status: "scheduled",
+					Status: repository.ExecutionStatusScheduled,
 					Count:  1,
 				},
 				{
-					Status:             "passed",
+					Status:             repository.ExecutionStatusPassed,
 					Count:              1,
 					LastTestFinishedAt: base,
 				},
@@ -333,7 +333,7 @@ func TestUpdaterSetTestCompletedSuiteStates(t *testing.T) {
 			alreadyCompleted: true,
 			states: []repository.TestSuiteExecutionState{
 				{
-					Status:             "passed",
+					Status:             repository.ExecutionStatusPassed,
 					Count:              1,
 					LastTestFinishedAt: base,
 				},
@@ -343,7 +343,7 @@ func TestUpdaterSetTestCompletedSuiteStates(t *testing.T) {
 			name: "passed",
 			states: []repository.TestSuiteExecutionState{
 				{
-					Status:             "passed",
+					Status:             repository.ExecutionStatusPassed,
 					Count:              2,
 					LastTestFinishedAt: base.Add(2 * time.Minute),
 				},
@@ -358,12 +358,12 @@ func TestUpdaterSetTestCompletedSuiteStates(t *testing.T) {
 			name: "failed",
 			states: []repository.TestSuiteExecutionState{
 				{
-					Status:             "passed",
+					Status:             repository.ExecutionStatusPassed,
 					Count:              1,
 					LastTestFinishedAt: base,
 				},
 				{
-					Status:             "failed",
+					Status:             repository.ExecutionStatusFailed,
 					Count:              2,
 					LastTestFinishedAt: base.Add(time.Minute),
 				},
@@ -378,17 +378,17 @@ func TestUpdaterSetTestCompletedSuiteStates(t *testing.T) {
 			name: "error precedence",
 			states: []repository.TestSuiteExecutionState{
 				{
-					Status:             "error",
+					Status:             repository.ExecutionStatusError,
 					Count:              1,
 					LastTestFinishedAt: base,
 				},
 				{
-					Status:             "failed",
+					Status:             repository.ExecutionStatusFailed,
 					Count:              1,
 					LastTestFinishedAt: base.Add(3 * time.Minute),
 				},
 				{
-					Status:             "passed",
+					Status:             repository.ExecutionStatusPassed,
 					Count:              1,
 					LastTestFinishedAt: base.Add(time.Minute),
 				},
@@ -402,14 +402,14 @@ func TestUpdaterSetTestCompletedSuiteStates(t *testing.T) {
 		{
 			name: "invalid status",
 			states: []repository.TestSuiteExecutionState{
-				{Status: "invalid", Count: 1},
+				{Status: repository.ExecutionStatus("invalid"), Count: 1},
 			},
 			wantErr: ErrInvalidExecutionStatus,
 		},
 		{
 			name: "missing finish time",
 			states: []repository.TestSuiteExecutionState{
-				{Status: "passed", Count: 1},
+				{Status: repository.ExecutionStatusPassed, Count: 1},
 			},
 			wantErr: ErrInvalidExecutionStatus,
 		},
@@ -422,7 +422,7 @@ func TestUpdaterSetTestCompletedSuiteStates(t *testing.T) {
 			name: "suite completion error",
 			states: []repository.TestSuiteExecutionState{
 				{
-					Status:             "passed",
+					Status:             repository.ExecutionStatusPassed,
 					Count:              1,
 					LastTestFinishedAt: base,
 				},
@@ -438,13 +438,13 @@ func TestUpdaterSetTestCompletedSuiteStates(t *testing.T) {
 			name: "concurrent suite completion",
 			states: []repository.TestSuiteExecutionState{
 				{
-					Status:             "passed",
+					Status:             repository.ExecutionStatusPassed,
 					Count:              1,
 					LastTestFinishedAt: base,
 				},
 			},
 			completionErr:  repository.ErrInvalidExecutionStateTransition,
-			currentStatus:  "passed",
+			currentStatus:  repository.ExecutionStatusPassed,
 			shouldFinalize: true,
 			shouldLookup:   true,
 			wantStatus:     model.ExecutionStatusPassed,
@@ -455,13 +455,13 @@ func TestUpdaterSetTestCompletedSuiteStates(t *testing.T) {
 			name: "concurrent suite completion failed",
 			states: []repository.TestSuiteExecutionState{
 				{
-					Status:             "passed",
+					Status:             repository.ExecutionStatusPassed,
 					Count:              1,
 					LastTestFinishedAt: base,
 				},
 			},
 			completionErr:  repository.ErrInvalidExecutionStateTransition,
-			currentStatus:  "failed",
+			currentStatus:  repository.ExecutionStatusFailed,
 			shouldFinalize: true,
 			shouldLookup:   true,
 			wantStatus:     model.ExecutionStatusPassed,
@@ -472,13 +472,13 @@ func TestUpdaterSetTestCompletedSuiteStates(t *testing.T) {
 			name: "rejected while running",
 			states: []repository.TestSuiteExecutionState{
 				{
-					Status:             "passed",
+					Status:             repository.ExecutionStatusPassed,
 					Count:              1,
 					LastTestFinishedAt: base,
 				},
 			},
 			completionErr:  repository.ErrInvalidExecutionStateTransition,
-			currentStatus:  "running",
+			currentStatus:  repository.ExecutionStatusRunning,
 			wantErr:        repository.ErrInvalidExecutionStateTransition,
 			shouldFinalize: true,
 			shouldLookup:   true,
@@ -490,7 +490,7 @@ func TestUpdaterSetTestCompletedSuiteStates(t *testing.T) {
 			name: "status lookup error",
 			states: []repository.TestSuiteExecutionState{
 				{
-					Status:             "passed",
+					Status:             repository.ExecutionStatusPassed,
 					Count:              1,
 					LastTestFinishedAt: base,
 				},
@@ -736,7 +736,7 @@ func assertSuiteCompleted(
 		)
 	}
 
-	if params.Status != string(status) {
+	if params.Status != repository.ExecutionStatus(status) {
 		t.Errorf(
 			"status=%q, want %q",
 			params.Status,

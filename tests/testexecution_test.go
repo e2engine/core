@@ -395,7 +395,7 @@ func repositoryTestExecution() *repository.TestExecution {
 		ID:              "execution-001",
 		StartedAt:       startedAt,
 		FinishedAt:      finishedAt,
-		Status:          string(model.ExecutionStatusPassed),
+		Status:          repository.ExecutionStatusPassed,
 		EnvironmentID:   "environment-001",
 		EnvironmentName: "local",
 		TestID:          "test-001",

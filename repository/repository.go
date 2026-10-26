@@ -50,12 +50,12 @@ type SetRunningParams struct {
 type SetCompletedParams struct {
 	ID         string          `json:"id"`
 	FinishedAt time.Time       `json:"finished_at"`
-	Status     string          `json:"status"`
+	Status     ExecutionStatus `json:"status"`
 	Summary    json.RawMessage `json:"summary"`
 }
 
 type TestSuiteExecutionState struct {
-	Status             string
+	Status             ExecutionStatus
 	Count              int
 	LastTestFinishedAt time.Time
 }
@@ -76,14 +76,14 @@ type TestExecutionRepository interface {
 
 	SetRunning(ctx context.Context, params *SetRunningParams) error
 	SetCompleted(ctx context.Context, params *SetCompletedParams) error
-	GetStatus(ctx context.Context, id string) (string, error)
+	GetStatus(ctx context.Context, id string) (ExecutionStatus, error)
 }
 
 type TestSuiteExecutionRepository interface {
 	EntityRepository[TestSuiteExecution]
 	SetRunning(ctx context.Context, params *SetRunningParams) error
 	SetCompleted(ctx context.Context, params *SetCompletedParams) error
-	GetStatus(ctx context.Context, id string) (string, error)
+	GetStatus(ctx context.Context, id string) (ExecutionStatus, error)
 }
 
 type ListParams struct {
@@ -120,11 +120,11 @@ type Resource struct {
 }
 
 type TestExecution struct {
-	ID                   string    `json:"id" yaml:"id"`
-	TestSuiteExecutionID string    `json:"test_suite_execution_id" yaml:"testsuite_execution_id"`
-	StartedAt            time.Time `json:"started_at" yaml:"started_at"`
-	FinishedAt           time.Time `json:"finished_at,omitzero" yaml:"finished_at,omitzero"`
-	Status               string    `json:"status" yaml:"status"`
+	ID                   string          `json:"id" yaml:"id"`
+	TestSuiteExecutionID string          `json:"test_suite_execution_id" yaml:"testsuite_execution_id"`
+	StartedAt            time.Time       `json:"started_at" yaml:"started_at"`
+	FinishedAt           time.Time       `json:"finished_at,omitzero" yaml:"finished_at,omitzero"`
+	Status               ExecutionStatus `json:"status" yaml:"status"`
 
 	EnvironmentID   string `json:"environment_id" yaml:"environment_id"`
 	EnvironmentName string `json:"environment_name,omitempty" yaml:"environment_name,omitempty"`
@@ -136,10 +136,10 @@ type TestExecution struct {
 }
 
 type TestSuiteExecution struct {
-	ID         string    `json:"id" yaml:"id"`
-	StartedAt  time.Time `json:"started_at" yaml:"started_at"`
-	FinishedAt time.Time `json:"finished_at,omitzero" yaml:"finished_at,omitzero"`
-	Status     string    `json:"status" yaml:"status"`
+	ID         string          `json:"id" yaml:"id"`
+	StartedAt  time.Time       `json:"started_at" yaml:"started_at"`
+	FinishedAt time.Time       `json:"finished_at,omitzero" yaml:"finished_at,omitzero"`
+	Status     ExecutionStatus `json:"status" yaml:"status"`
 
 	EnvironmentID   string `json:"environment_id" yaml:"environment_id"`
 	EnvironmentName string `json:"environment_name,omitempty" yaml:"environment_name,omitempty"`
@@ -177,4 +177,14 @@ type Position string
 const (
 	PositionAfter  Position = "after"
 	PositionBefore Position = "before"
+)
+
+type ExecutionStatus string
+
+const (
+	ExecutionStatusScheduled ExecutionStatus = "scheduled"
+	ExecutionStatusRunning   ExecutionStatus = "running"
+	ExecutionStatusPassed    ExecutionStatus = "passed"
+	ExecutionStatusFailed    ExecutionStatus = "failed"
+	ExecutionStatusError     ExecutionStatus = "error"
 )

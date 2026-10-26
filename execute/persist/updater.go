@@ -28,11 +28,12 @@ type TestExecutionRepository interface {
 type TestSuiteExecutionRepository interface {
 	SetRunning(ctx context.Context, params *SetRunningParams) error
 	SetCompleted(ctx context.Context, params *SetCompletedParams) error
-	GetStatus(ctx context.Context, id string) (string, error)
+	GetStatus(ctx context.Context, id string) (corerepository.ExecutionStatus, error)
 }
 
 type SetRunningParams = corerepository.SetRunningParams
 type SetCompletedParams = corerepository.SetCompletedParams
+type ExecutionStatus = corerepository.ExecutionStatus
 
 type Updater struct {
 	testExecution      TestExecutionRepository
@@ -96,7 +97,7 @@ func (u *Updater) SetTestCompleted(
 		ctx,
 		&SetCompletedParams{
 			ID:         result.ExecutionID,
-			Status:     string(result.Status),
+			Status:     ExecutionStatus(result.Status),
 			FinishedAt: result.FinishedAt,
 			Summary:    summary,
 		},
@@ -133,7 +134,7 @@ func (u *Updater) SetTestSuiteCompleted(
 		ctx,
 		&SetCompletedParams{
 			ID:         result.ExecutionID,
-			Status:     string(result.Status),
+			Status:     ExecutionStatus(result.Status),
 			FinishedAt: result.FinishedAt,
 			Summary:    summary,
 		},
@@ -192,7 +193,7 @@ func (u *Updater) tryCompleteTestSuite(
 		default:
 			return false, errorc.With(
 				ErrInvalidExecutionStatus,
-				errorc.String(keys.ExecutionStatus, state.Status),
+				errorc.String(keys.ExecutionStatus, string(state.Status)),
 			)
 		}
 
