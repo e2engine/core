@@ -10,18 +10,24 @@ ARCH := $(shell uname -m)
 
 GOLANGCI_LINT_VERSION ?= $(shell go -C $(TOOLS_DIR) list -m -f '{{.Version}}' github.com/golangci/golangci-lint/v2)
 MOCKGEN_VERSION       ?= $(shell go -C $(TOOLS_DIR) list -m -f '{{.Version}}' go.uber.org/mock)
+GOVULNCHECK_VERSION   ?= $(shell go -C $(TOOLS_DIR) list -m -f '{{.Version}}' golang.org/x/vuln)
 
 GOLANGCI_LINT := $(BIN_DIR)/golangci-lint-$(OS)-$(ARCH)-$(GOLANGCI_LINT_VERSION)
 MOCKGEN       := $(BIN_DIR)/mockgen-$(OS)-$(ARCH)-$(MOCKGEN_VERSION)
+GOVULNCHECK   := $(BIN_DIR)/govulncheck-$(OS)-$(ARCH)-$(GOVULNCHECK_VERSION)
 
 GOLANGCI_LINT_LINK := $(BIN_DIR)/golangci-lint
 MOCKGEN_LINK       := $(BIN_DIR)/mockgen
+GOVULNCHECK_LINK   := $(BIN_DIR)/govulncheck
 
 $(GOLANGCI_LINT):
 	$(call go-install-tool,$@,github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
 
 $(MOCKGEN):
 	$(call go-install-tool,$@,go.uber.org/mock/mockgen,$(MOCKGEN_VERSION))
+
+$(GOVULNCHECK):
+	$(call go-install-tool,$@,golang.org/x/vuln/cmd/govulncheck,$(GOVULNCHECK_VERSION))
 
 .PHONY: $(GOLANGCI_LINT_LINK)
 $(GOLANGCI_LINT_LINK): $(GOLANGCI_LINT)
@@ -31,7 +37,11 @@ $(GOLANGCI_LINT_LINK): $(GOLANGCI_LINT)
 $(MOCKGEN_LINK): $(MOCKGEN)
 	$(call create-symlink,$(MOCKGEN),$(MOCKGEN_LINK))
 
-TOOLS := install-golangci-lint install-mockgen
+.PHONY: $(GOVULNCHECK_LINK)
+$(GOVULNCHECK_LINK): $(GOVULNCHECK)
+	$(call create-symlink,$(GOVULNCHECK),$(GOVULNCHECK_LINK))
+
+TOOLS := install-golangci-lint install-mockgen install-govulncheck
 
 .PHONY: install-tools
 install-tools: $(TOOLS)
@@ -41,6 +51,9 @@ install-golangci-lint: $(GOLANGCI_LINT) $(GOLANGCI_LINT_LINK)
 
 .PHONY: install-mockgen
 install-mockgen: $(MOCKGEN) $(MOCKGEN_LINK)
+
+.PHONY: install-govulncheck
+install-govulncheck: $(GOVULNCHECK) $(GOVULNCHECK_LINK)
 
 .PHONY: clean-tools
 clean-tools:
