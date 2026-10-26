@@ -9,8 +9,6 @@ import (
 	modellib "github.com/ygrebnov/model"
 
 	"github.com/e2engine/core/model/matcher"
-	"github.com/e2engine/core/pkg/errors"
-	"github.com/e2engine/core/pkg/keys"
 )
 
 type HTTPRequest struct {
@@ -129,13 +127,7 @@ func getStringMatcherValidJSONRule() (modellib.Rule, error) {
 
 		if value.Operator == matcher.StringMatchOperatorEquals {
 			if !json.Valid([]byte(value.Value)) {
-				return errorc.With(
-					errors.ErrInvalidSpec,
-					errorc.String(
-						keys.Validation,
-						"value must contain valid JSON",
-					),
-				)
+				return errorc.New("value must contain valid JSON")
 			}
 		}
 

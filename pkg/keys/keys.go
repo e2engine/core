@@ -93,4 +93,6 @@ var (
 
 	OrderBy        = keys.New("OrderBy")
 	OrderDirection = keys.New("OrderDirection")
+
+	Fields = keys.New("fields")
 )

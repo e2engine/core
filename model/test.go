@@ -2,7 +2,7 @@ package model
 
 import (
 	"context"
-	nativeerrors "errors"
+	"strconv"
 
 	"github.com/ygrebnov/errorc"
 	modellib "github.com/ygrebnov/model"
@@ -17,46 +17,37 @@ var testBinding *modellib.Binding[Test]
 
 func (t *Test) Validate(ctx context.Context) error {
 	if t.Kind != ResourceKindTest {
-		return errorc.With(
-			errors.ErrInvalidSpec,
-			errorc.String(keys.SpecKind, string(EntityKindTest)),
-			errorc.String(keys.Validation, "invalid resource kind"),
-		)
+		return invalidTestSpec(errorc.New("invalid kind"), "Kind")
 	}
 
 	if err := testBinding.Validate(ctx, t); err != nil {
-		return nativeerrors.Join(
-			errorc.With(
-				errors.ErrInvalidSpec,
-				errorc.String(keys.SpecKind, string(EntityKindTest)),
-			),
-			err,
-		)
+		return handleValidationError(err, EntityKindTest)
 	}
 
-	if err := t.Spec.validateTags(); err != nil {
-		return invalidTestSpec(err)
+	if index, err := t.Spec.validateTags(); err != nil {
+		return invalidTestSpec(err, "Spec.Tags["+strconv.Itoa(index)+"]")
 	}
 
-	if err := t.Spec.validateProtocol(); err != nil {
-		return invalidTestSpec(err)
+	fields, err := t.Spec.validateProtocol()
+	if err != nil {
+		return invalidTestSpec(err, fields)
 	}
 
 	if t.Spec.Request.HTTP != nil {
 		if err := t.Spec.Request.HTTP.Validate(); err != nil {
-			return invalidTestSpec(err)
+			return invalidTestSpec(err, "Spec.Request.HTTP")
 		}
 	}
 
 	if t.Spec.Expect.HTTP != nil {
 		if err := t.Spec.Expect.HTTP.Validate(); err != nil {
-			return invalidTestSpec(err)
+			return invalidTestSpec(err, "Spec.Expect.HTTP")
 		}
 	}
 
 	for i := range t.Spec.Expect.Calls {
 		if err := t.Spec.Expect.Calls[i].Validate(); err != nil {
-			return invalidTestSpec(err)
+			return invalidTestSpec(err, "Spec.Expect.Calls["+strconv.Itoa(i)+"]")
 		}
 	}
 
@@ -69,12 +60,12 @@ type TestSpec struct {
 	Expect  ExpectSpec  `json:"expect" yaml:"expect"`
 }
 
-func (s *TestSpec) validateTags() error {
+func (s *TestSpec) validateTags() (int, error) {
 	tags := make(map[string]struct{}, len(s.Tags))
 
-	for _, tag := range s.Tags {
+	for i, tag := range s.Tags {
 		if _, ok := tags[tag]; ok {
-			return errorc.With(
+			return i, errorc.With(
 				errorc.New("test tags must be unique"),
 				errorc.String(keys.TestTag, tag),
 			)
@@ -83,18 +74,17 @@ func (s *TestSpec) validateTags() error {
 		tags[tag] = struct{}{}
 	}
 
-	return nil
+	return 0, nil
 }
 
-func (s *TestSpec) validateProtocol() error {
+func (s *TestSpec) validateProtocol() (string, error) {
 	requestHTTP := s.Request.HTTP != nil
 	requestGRPC := s.Request.GRPC != nil
 
 	// Both nil or both non-nil are invalid.
 	if requestHTTP == requestGRPC {
-		return errorc.New(
-			"request must contain exactly one of http or grpc",
-		)
+		return "Spec.Request.HTTP, Spec.Request.GRPC",
+			errorc.New("request must contain exactly one of http or grpc")
 	}
 
 	expectHTTP := s.Expect.HTTP != nil
@@ -102,28 +92,29 @@ func (s *TestSpec) validateProtocol() error {
 
 	// Both nil or both non-nil are invalid.
 	if expectHTTP == expectGRPC {
-		return errorc.New(
-			"expect must contain exactly one of http or grpc",
-		)
+		return "Spec.Expect.HTTP, Spec.Expect.GRPC",
+			errorc.New("expect must contain exactly one of http or grpc")
 	}
 
-	if requestHTTP != expectHTTP ||
-		requestGRPC != expectGRPC {
-		return errorc.New(
-			"request and expect protocols must match",
-		)
+	if requestHTTP != expectHTTP {
+		return "Spec.Request.HTTP, Spec.Expect.HTTP",
+			errorc.New("request and expect protocols must match")
 	}
 
-	return nil
+	if requestGRPC != expectGRPC {
+		return "Spec.Request.GRPC, Spec.Expect.GRPC",
+			errorc.New("request and expect protocols must match")
+	}
+
+	return "", nil
 }
 
-func invalidTestSpec(validation error) error {
-	return nativeerrors.Join(
-		errorc.With(
-			errors.ErrInvalidSpec,
-			errorc.String(keys.SpecKind, string(EntityKindTest)),
-		),
-		validation,
+func invalidTestSpec(validation error, fields string) error {
+	return errorc.With(
+		errors.ErrInvalidSpec,
+		errorc.String(keys.SpecKind, string(EntityKindTest)),
+		errorc.String(keys.Fields, fields),
+		errorc.String(keys.Validation, validation.Error()),
 	)
 }
 
