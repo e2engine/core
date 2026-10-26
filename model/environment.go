@@ -2,7 +2,7 @@ package model
 
 import (
 	"context"
-	nativeerrors "errors"
+	"strconv"
 
 	"github.com/ygrebnov/errorc"
 	modellib "github.com/ygrebnov/model"
@@ -20,24 +20,20 @@ func (e *Environment) Validate(ctx context.Context) error {
 		return errorc.With(
 			errors.ErrInvalidSpec,
 			errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
-			errorc.String(keys.Validation, "invalid resource kind"),
+			errorc.String(keys.Fields, "Kind"),
+			errorc.String(keys.Validation, "invalid kind"),
 		)
 	}
 
 	if err := environmentBinding.Validate(ctx, e); err != nil {
-		return nativeerrors.Join(
-			errorc.With(
-				errors.ErrInvalidSpec,
-				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
-			),
-			err,
-		)
+		return handleValidationError(err, EntityKindEnvironment)
 	}
 
 	if len(e.Spec.Services) == 0 {
 		return errorc.With(
 			errors.ErrInvalidSpec,
 			errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+			errorc.String(keys.Fields, "Spec.Services"),
 			errorc.String(keys.Validation, "environment spec must contain at least one service"),
 		)
 	}
@@ -52,7 +48,7 @@ func (e *Environment) Validate(ctx context.Context) error {
 			return errorc.With(
 				errors.ErrInvalidSpec,
 				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
-				errorc.String(keys.EnvironmentServiceID, service.ID),
+				errorc.String(keys.Fields, "Spec.Services["+strconv.Itoa(i)+"].ID"),
 				errorc.String(keys.Validation, "service ids must be unique"),
 			)
 		}
@@ -62,17 +58,17 @@ func (e *Environment) Validate(ctx context.Context) error {
 			return errorc.With(
 				errors.ErrInvalidSpec,
 				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
-				errorc.String(keys.EnvironmentServiceID, service.ID),
+				errorc.String(keys.Fields, "Spec.Services["+strconv.Itoa(i)+"].E2EnginePort"),
 				errorc.String(
 					keys.Validation,
-					"e2engine ports must be unique within an environment",
+					"E2Engine ports must be unique within an environment",
 				),
 			)
 		}
 
 		ports[service.E2EnginePort] = struct{}{}
 
-		if err := service.Validate(); err != nil {
+		if err := service.Validate(i); err != nil {
 			return err
 		}
 	}
@@ -114,12 +110,16 @@ type ServiceSpec struct {
 	Proto           *GRPCProtoSpec   `json:"proto,omitempty" yaml:"proto,omitempty" validateElem:"omitempty,dive"`
 }
 
-func (s *ServiceSpec) Validate() error {
+func (s *ServiceSpec) Validate(index int) error {
 	if s.Kind == ServiceKindHTTP {
 		if s.Proto != nil {
 			return errorc.With(
 				errors.ErrInvalidSpec,
 				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+				errorc.String(
+					keys.Fields,
+					"Spec.Services["+strconv.Itoa(index)+"].Proto",
+				),
 				errorc.String(keys.Validation, "proto spec is not allowed for HTTP service"),
 			)
 		}
@@ -128,6 +128,10 @@ func (s *ServiceSpec) Validate() error {
 			return errorc.With(
 				errors.ErrInvalidSpec,
 				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+				errorc.String(
+					keys.Fields,
+					"Spec.Services["+strconv.Itoa(index)+"].RequestDefaults.Metadata",
+				),
 				errorc.String(keys.Validation, "metadata is not allowed for HTTP service"),
 			)
 		}
@@ -138,6 +142,10 @@ func (s *ServiceSpec) Validate() error {
 			return errorc.With(
 				errors.ErrInvalidSpec,
 				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+				errorc.String(
+					keys.Fields,
+					"Spec.Services["+strconv.Itoa(index)+"].RequestDefaults.Headers",
+				),
 				errorc.String(keys.Validation, "headers are not allowed for GRPC service"),
 			)
 		}
@@ -146,6 +154,10 @@ func (s *ServiceSpec) Validate() error {
 			return errorc.With(
 				errors.ErrInvalidSpec,
 				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+				errorc.String(
+					keys.Fields,
+					"Spec.Services["+strconv.Itoa(index)+"].Proto",
+				),
 				errorc.String(keys.Validation, "proto spec is required for GRPC service"),
 			)
 		}
@@ -154,6 +166,11 @@ func (s *ServiceSpec) Validate() error {
 			return errorc.With(
 				errors.ErrInvalidSpec,
 				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+				errorc.String(
+					keys.Fields,
+					"Spec.Services["+strconv.Itoa(index)+"].Proto.External, "+
+						"Spec.Services["+strconv.Itoa(index)+"].Proto.Internal",
+				),
 				errorc.String(
 					keys.Validation,
 					"exactly one of external or internal proto spec must be provided for GRPC service",
@@ -166,6 +183,11 @@ func (s *ServiceSpec) Validate() error {
 				errors.ErrInvalidSpec,
 				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
 				errorc.String(
+					keys.Fields,
+					"Spec.Services["+strconv.Itoa(index)+"].Mode, "+
+						"Spec.Services["+strconv.Itoa(index)+"].Proto.Internal",
+				),
+				errorc.String(
 					keys.Validation,
 					"internal proto spec is not allowed for real GRPC service",
 				),
@@ -177,6 +199,10 @@ func (s *ServiceSpec) Validate() error {
 			return errorc.With(
 				errors.ErrInvalidSpec,
 				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+				errorc.String(
+					keys.Fields,
+					"Spec.Services["+strconv.Itoa(index)+"].Proto.Internal.Methods",
+				),
 				errorc.String(
 					keys.Validation,
 					"internal proto spec must contain at least one method",
@@ -193,6 +219,11 @@ func (s *ServiceSpec) Validate() error {
 					errors.ErrInvalidSpec,
 					errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
 					errorc.String(
+						keys.Fields,
+						"Spec.Services["+strconv.Itoa(index)+"].Proto.External.File, "+
+							"Spec.Services["+strconv.Itoa(index)+"].Proto.External.BufModule",
+					),
+					errorc.String(
 						keys.Validation,
 						"exactly one of file or buf_module must be provided for external GRPC proto spec",
 					),
@@ -201,29 +232,84 @@ func (s *ServiceSpec) Validate() error {
 		}
 	}
 
-	if s.Mode == ServiceModeMocked && s.Target != "" {
-		return errorc.With(
-			errors.ErrInvalidSpec,
-			errorc.String(keys.Validation, "target is not allowed for mocked service"),
-		)
+	if s.Mode == ServiceModeMocked {
+		if s.Target != "" {
+			return errorc.With(
+				errors.ErrInvalidSpec,
+				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+				errorc.String(
+					keys.Fields,
+					"Spec.Services["+strconv.Itoa(index)+"].Mode, "+
+						"Spec.Services["+strconv.Itoa(index)+"].Target",
+				),
+				errorc.String(keys.Validation, "target is not allowed for mocked service"),
+			)
+		}
+
+		if len(s.Fixtures) == 0 {
+			return errorc.With(
+				errors.ErrInvalidSpec,
+				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+				errorc.String(
+					keys.Fields,
+					"Spec.Services["+strconv.Itoa(index)+"].Mode, "+
+						"Spec.Services["+strconv.Itoa(index)+"].Fixtures",
+				),
+				errorc.String(keys.Validation, "mocked service must contain at least one fixture"),
+			)
+		}
 	}
 
 	if s.Mode == ServiceModeReal {
 		if s.Target == "" {
 			return errorc.With(
 				errors.ErrInvalidSpec,
+				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+				errorc.String(
+					keys.Fields,
+					"Spec.Services["+strconv.Itoa(index)+"].Target",
+				),
 				errorc.String(keys.Validation, "target is required for real service"),
+			)
+		}
+
+		if len(s.Fixtures) > 0 {
+			return errorc.With(
+				errors.ErrInvalidSpec,
+				errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+				errorc.String(
+					keys.Fields,
+					"Spec.Services["+strconv.Itoa(index)+"].Mode, "+
+						"Spec.Services["+strconv.Itoa(index)+"].Fixtures",
+				),
+				errorc.String(keys.Validation, "fixtures are not allowed for real service"),
 			)
 		}
 
 		switch s.Kind {
 		case ServiceKindHTTP:
 			if err := validateHTTPURL(s.Target); err != nil {
-				return err
+				return errorc.With(
+					errors.ErrInvalidSpec,
+					errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+					errorc.String(
+						keys.Fields,
+						"Spec.Services["+strconv.Itoa(index)+"].Target",
+					),
+					errorc.String(keys.Validation, err.Error()),
+				)
 			}
 		case ServiceKindGRPC:
 			if err := validateNetworkAddress(s.Target); err != nil {
-				return err
+				return errorc.With(
+					errors.ErrInvalidSpec,
+					errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+					errorc.String(
+						keys.Fields,
+						"Spec.Services["+strconv.Itoa(index)+"].Target",
+					),
+					errorc.String(keys.Validation, err.Error()),
+				)
 			}
 		}
 	}
@@ -237,6 +323,11 @@ func (s *ServiceSpec) Validate() error {
 				return errorc.With(
 					errors.ErrInvalidSpec,
 					errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+					errorc.String(
+						keys.Fields,
+						"Spec.Services["+strconv.Itoa(index)+"].Fixtures["+strconv.Itoa(i)+"].When.HTTP, "+
+							"Spec.Services["+strconv.Itoa(index)+"].Fixtures["+strconv.Itoa(i)+"].Then.HTTP",
+					),
 					errorc.String(keys.Validation, "HTTP service fixture must contain HTTP when and then"),
 				)
 			}
@@ -245,27 +336,36 @@ func (s *ServiceSpec) Validate() error {
 				return errorc.With(
 					errors.ErrInvalidSpec,
 					errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+					errorc.String(
+						keys.Fields,
+						"Spec.Services["+strconv.Itoa(index)+"].Fixtures["+strconv.Itoa(i)+"].When.GRPC, "+
+							"Spec.Services["+strconv.Itoa(index)+"].Fixtures["+strconv.Itoa(i)+"].Then.GRPC",
+					),
 					errorc.String(keys.Validation, "gRPC fixture is not allowed for HTTP service"),
 				)
 			}
 
 			if err := fixture.When.HTTP.Validate(); err != nil {
-				return nativeerrors.Join(
-					errorc.With(
-						errors.ErrInvalidSpec,
-						errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+				return errorc.With(
+					errors.ErrInvalidSpec,
+					errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+					errorc.String(
+						keys.Fields,
+						"Spec.Services["+strconv.Itoa(index)+"].Fixtures["+strconv.Itoa(i)+"].When.HTTP",
 					),
-					err,
+					errorc.String(keys.Validation, err.Error()),
 				)
 			}
 
 			if err := fixture.Then.HTTP.Validate(); err != nil {
-				return nativeerrors.Join(
-					errorc.With(
-						errors.ErrInvalidSpec,
-						errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+				return errorc.With(
+					errors.ErrInvalidSpec,
+					errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+					errorc.String(
+						keys.Fields,
+						"Spec.Services["+strconv.Itoa(index)+"].Fixtures["+strconv.Itoa(i)+"].Then.HTTP",
 					),
-					err,
+					errorc.String(keys.Validation, err.Error()),
 				)
 			}
 
@@ -274,6 +374,10 @@ func (s *ServiceSpec) Validate() error {
 				return errorc.With(
 					errors.ErrInvalidSpec,
 					errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+					errorc.String(
+						keys.Fields,
+						"Spec.Services["+strconv.Itoa(index)+"].Fixtures["+strconv.Itoa(i)+"].When.GRPC, "+
+							"Spec.Services["+strconv.Itoa(index)+"].Fixtures["+strconv.Itoa(i)+"].Then.GRPC"),
 					errorc.String(keys.Validation, "gRPC service fixture must contain gRPC when and then"),
 				)
 			}
@@ -282,6 +386,11 @@ func (s *ServiceSpec) Validate() error {
 				return errorc.With(
 					errors.ErrInvalidSpec,
 					errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+					errorc.String(
+						keys.Fields,
+						"Spec.Services["+strconv.Itoa(index)+"].Fixtures["+strconv.Itoa(i)+"].When.HTTP, "+
+							"Spec.Services["+strconv.Itoa(index)+"].Fixtures["+strconv.Itoa(i)+"].Then.HTTP",
+					),
 					errorc.String(keys.Validation, "HTTP fixture is not allowed for gRPC service"),
 				)
 			}

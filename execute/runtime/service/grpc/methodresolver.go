@@ -136,7 +136,10 @@ func (r *ProtoMethodResolver) loadFile(
 	}
 
 	if errValidate := util.ValidateFilePath(absolutePath); errValidate != nil {
-		return nil, errValidate
+		return nil, errorc.With(
+			errors.ErrInaccessiblePath,
+			errorc.String(keys.FilePath, path),
+		)
 	}
 
 	r.mu.RLock()

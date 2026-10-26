@@ -13,7 +13,7 @@ type Config struct {
 	Kind    Kind   `json:"kind" yaml:"kind" default:"direct" validate:"oneof(direct,socket)"`
 	Address string `json:"address,omitempty" yaml:"address,omitempty" validate:"omitempty,networkaddress"`
 
-	Socket *SocketConfig `json:"socket,omitempty" yaml:"socket,omitempty" validateElem:"omitempty,dive"`
+	Socket *SocketConfig `json:"socket,omitempty" yaml:"socket,omitempty" default:"dive" validateElem:"omitempty,dive"`
 }
 
 func (c *Config) Validate() error {
@@ -25,16 +25,6 @@ func (c *Config) Validate() error {
 				errorc.String(
 					keys.Validation,
 					"transport address is not allowed for direct transport",
-				),
-			)
-		}
-
-		if c.Socket != nil {
-			return errorc.With(
-				ErrInvalidConfig,
-				errorc.String(
-					keys.Validation,
-					"socket configuration is not allowed for direct transport",
 				),
 			)
 		}
