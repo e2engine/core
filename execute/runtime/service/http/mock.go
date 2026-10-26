@@ -175,11 +175,14 @@ func (s *MockHTTPService) match(
 		)
 	}
 
+	query := r.URL.Query()
+
 	for i := range s.fixtures {
 		fixture := &s.fixtures[i]
 
-		if fixture.method == r.Method && fixture.path == r.URL.Path &&
-			areQueryParamsEqual(fixture.query, r.URL.Query()) &&
+		if fixture.method == r.Method &&
+			fixture.path == r.URL.Path &&
+			areQueryParamsEqual(fixture.query, query) &&
 			areHeadersEqual(fixture.headers, r.Header) {
 			equalBody, errBodyEqual := isBodyEqual(
 				fixture.body,

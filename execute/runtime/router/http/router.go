@@ -168,7 +168,8 @@ func (r *Router) Mount(ctx context.Context) error {
 		go func() {
 			err := server.Serve(listener)
 			if err != nil &&
-				!nativeerrors.Is(err, http.ErrServerClosed) {
+				!nativeerrors.Is(err, http.ErrServerClosed) &&
+				!nativeerrors.Is(err, net.ErrClosed) {
 				r.logger.Error(
 					"Environment router listener stopped unexpectedly",
 					log.String(
@@ -232,6 +233,13 @@ func (r *Router) unmountMountedRoutes(
 			if closeErr := route.server.Close(); closeErr != nil {
 				accErr = nativeerrors.Join(accErr, closeErr)
 			}
+		}
+
+		// Ensure the listener is closed even if Shutdown()
+		// runs before Serve() registers it.
+		if err := route.listener.Close(); err != nil &&
+			!nativeerrors.Is(err, net.ErrClosed) {
+			accErr = nativeerrors.Join(accErr, err)
 		}
 
 		route.transport.CloseIdleConnections()
