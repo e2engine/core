@@ -9,7 +9,7 @@ require (
 	github.com/e2engine/instrumentation-go/http v0.1.1
 	github.com/ygrebnov/errorc v0.6.1
 	github.com/ygrebnov/keys v0.2.0
-	github.com/ygrebnov/log v0.4.4
+	github.com/ygrebnov/log v0.5.0
 	github.com/ygrebnov/model v0.7.5
 	go.uber.org/mock v0.6.0
 	google.golang.org/grpc v1.84.0
