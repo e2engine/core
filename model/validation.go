@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,7 +40,7 @@ func GetValidationRules() []modellib.Rule {
 		}
 	})
 
-	return rules
+	return slices.Clone(rules)
 }
 
 var (
