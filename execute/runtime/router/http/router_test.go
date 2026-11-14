@@ -971,7 +971,8 @@ func TestRouterUnmountClosesActiveRequest(t *testing.T) {
 	}
 
 	select {
-	case <-requestDone:
+	case requestDoneErr := <-requestDone:
+		_ = requestDoneErr
 	case <-time.After(5 * time.Second):
 		t.Error("active client request did not terminate")
 	}

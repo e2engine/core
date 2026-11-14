@@ -5,7 +5,6 @@ import (
 	"strconv"
 
 	"github.com/ygrebnov/errorc"
-	modellib "github.com/ygrebnov/model"
 
 	"github.com/e2engine/core/pkg/errors"
 	"github.com/e2engine/core/pkg/keys"
@@ -13,19 +12,22 @@ import (
 
 type Test Resource[TestSpec]
 
-var testBinding *modellib.Binding[Test]
-
 func (t *Test) Validate(ctx context.Context) error {
 	if t.Kind != ResourceKindTest {
 		return invalidTestSpec(errorc.New("invalid kind"), "Kind")
 	}
 
-	if err := testBinding.Validate(ctx, t); err != nil {
-		return handleValidationError(err, EntityKindTest)
+	binding, err := getTestBinding()
+	if err != nil {
+		return err
 	}
 
-	if index, err := t.Spec.validateTags(); err != nil {
-		return invalidTestSpec(err, "Spec.Tags["+strconv.Itoa(index)+"]")
+	if errValidate := binding.Validate(ctx, t); errValidate != nil {
+		return handleValidationError(errValidate, EntityKindTest)
+	}
+
+	if index, errValidateTags := t.Spec.validateTags(); errValidateTags != nil {
+		return invalidTestSpec(errValidateTags, "Spec.Tags["+strconv.Itoa(index)+"]")
 	}
 
 	fields, err := t.Spec.validateProtocol()

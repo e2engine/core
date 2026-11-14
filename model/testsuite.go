@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	"github.com/ygrebnov/errorc"
-	modellib "github.com/ygrebnov/model"
 
 	"github.com/e2engine/core/pkg/errors"
 	"github.com/e2engine/core/pkg/keys"
@@ -14,15 +13,18 @@ import (
 
 type TestSuite Resource[TestSuiteSpec]
 
-var testSuiteBinding *modellib.Binding[TestSuite]
-
 func (t *TestSuite) Validate(ctx context.Context) error {
 	if t.Kind != ResourceKindTestSuite {
 		return invalidTestSuiteSpec(nativeerrors.New("invalid kind"), "Kind")
 	}
 
-	if err := testSuiteBinding.Validate(ctx, t); err != nil {
-		return handleValidationError(err, EntityKindTestSuite)
+	binding, err := getTestSuiteBinding()
+	if err != nil {
+		return err
+	}
+
+	if errValidate := binding.Validate(ctx, t); errValidate != nil {
+		return handleValidationError(errValidate, EntityKindTestSuite)
 	}
 
 	if fields, err := t.Spec.Selectors.Validate(); err != nil {

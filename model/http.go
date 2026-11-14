@@ -119,7 +119,7 @@ func (h *HTTPResponsePattern) Validate() error {
 	return nil
 }
 
-func getStringMatcherValidJSONRule() (modellib.Rule, error) {
+func getStringMatcherValidJSONRule() modellib.Rule {
 	return modellib.NewRule[*matcher.String]("validjson", func(value *matcher.String, _ ...string) error {
 		if value == nil {
 			return nil

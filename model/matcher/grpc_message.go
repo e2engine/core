@@ -99,7 +99,7 @@ func (m *GRPCMessage) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
-func GetGRPCMessageMatcherRule() (modellib.Rule, error) {
+func GetGRPCMessageMatcherRule() modellib.Rule {
 	return modellib.NewRule[*GRPCMessage](
 		"grpcmessagematcher",
 		func(value *GRPCMessage, _ ...string) error {
