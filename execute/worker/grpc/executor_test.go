@@ -25,6 +25,8 @@ import (
 	pkgerrors "github.com/e2engine/core/pkg/errors"
 )
 
+const testExecutionID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
 func TestFindProtoSpec(t *testing.T) {
 	service := testServiceSpec()
 
@@ -318,7 +320,7 @@ func TestExecutorExecute(t *testing.T) {
 
 				if id := e2enginegrpc.TestExecutionID(
 					md,
-				); id != "execution-123" {
+				); id != testExecutionID {
 					t.Errorf(
 						"unexpected execution ID metadata: %s",
 						id,
@@ -415,7 +417,7 @@ func TestExecutorExecute(t *testing.T) {
 	)
 
 	job := &execute.TestJob{
-		ExecutionID: "execution-123",
+		ExecutionID: testExecutionID,
 		Environment: model.Environment{
 			Spec: model.EnvironmentSpec{
 				Services: []model.ServiceSpec{
@@ -493,10 +495,10 @@ func TestExecutorExecute(t *testing.T) {
 
 			if id := e2enginegrpc.TestExecutionID(
 				metadata.MD(req.Metadata),
-			); id != "execution-123" {
+			); id != testExecutionID {
 				t.Errorf(
 					"expected execution ID %q, got %q",
-					"execution-123",
+					testExecutionID,
 					id,
 				)
 			}
@@ -678,7 +680,7 @@ func TestExecutorExecuteWithTestLevelProto(t *testing.T) {
 	)
 
 	job := &execute.TestJob{
-		ExecutionID: "execution-123",
+		ExecutionID: testExecutionID,
 
 		// No matching gRPC service or protobuf specification.
 		Environment: model.Environment{},
@@ -758,7 +760,7 @@ func TestExecutorExecuteAddressResolutionError(t *testing.T) {
 		Return("", resolveErr)
 
 	job := &execute.TestJob{
-		ExecutionID: "execution-123",
+		ExecutionID: testExecutionID,
 		Environment: model.Environment{
 			Spec: model.EnvironmentSpec{
 				Services: []model.ServiceSpec{
@@ -842,7 +844,7 @@ func TestExecutorExecuteRequestMessageSizeLimit(t *testing.T) {
 			)
 
 			job := &execute.TestJob{
-				ExecutionID: "execution-123",
+				ExecutionID: testExecutionID,
 				Environment: model.Environment{
 					Spec: model.EnvironmentSpec{
 						Services: []model.ServiceSpec{
@@ -994,7 +996,7 @@ func TestExecutorExecuteResponseMessageSizeLimit(t *testing.T) {
 	)
 
 	job := &execute.TestJob{
-		ExecutionID: "execution-123",
+		ExecutionID: testExecutionID,
 		Environment: model.Environment{
 			Spec: model.EnvironmentSpec{
 				Services: []model.ServiceSpec{*service},

@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,109 @@ import (
 	"github.com/e2engine/core/execute/runtime/config"
 	"github.com/e2engine/core/pkg/log"
 )
+
+const testExecutionID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+func TestValidTestExecutionID(t *testing.T) {
+	tests := []struct {
+		name   string
+		values []string
+		want   string
+	}{
+		{name: "missing"},
+		{name: "valid", values: []string{testExecutionID}, want: testExecutionID},
+		{name: "empty", values: []string{""}},
+		{name: "too short", values: []string{"execution-1"}},
+		{name: "uppercase", values: []string{strings.ToUpper(testExecutionID)}},
+		{name: "multiple", values: []string{testExecutionID, testExecutionID}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			header := make(http.Header)
+			for _, value := range tt.values {
+				header.Add("E2Engine-Test-Execution-ID", value)
+			}
+
+			if got := validTestExecutionID(header); got != tt.want {
+				t.Errorf("validTestExecutionID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRouterNormalizesExecutionIDUpstream(t *testing.T) {
+	upstreamHeaders := make(chan http.Header, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		upstreamHeaders <- req.Header.Clone()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+
+	store := call.NewStoreFactory(&call.Config{
+		MaxCalls:         10,
+		MaxRecordedBytes: 1024 * 1024,
+	}).New()
+	router := newTestHTTPRouter(t, store)
+	router.Register(&runtime.Route{
+		ServiceID:      "service-1",
+		ListenAddress:  "127.0.0.1:0",
+		RuntimeAddress: upstream.Listener.Addr().String(),
+	})
+	if err := router.Mount(t.Context()); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+	defer func() {
+		if err := router.Unmount(context.Background()); err != nil {
+			t.Errorf("Unmount() error = %v", err)
+		}
+	}()
+
+	tests := []struct {
+		name   string
+		values []string
+		want   []string
+	}{
+		{name: "valid", values: []string{testExecutionID}, want: []string{testExecutionID}},
+		{name: "invalid", values: []string{"execution-1"}},
+		{name: "multiple", values: []string{testExecutionID, testExecutionID}},
+		{name: "missing"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := http.NewRequestWithContext(
+				t.Context(),
+				http.MethodGet,
+				"http://"+router.mounted[0].listener.Addr().String(),
+				nil,
+			)
+			if err != nil {
+				t.Fatalf("NewRequestWithContext() error = %v", err)
+			}
+			req.Header.Set("X-Test", "preserved")
+			for _, value := range tt.values {
+				req.Header.Add("E2Engine-Test-Execution-ID", value)
+			}
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("Do() error = %v", err)
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusNoContent {
+				t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusNoContent)
+			}
+
+			got := <-upstreamHeaders
+			if values := got.Values("E2Engine-Test-Execution-ID"); !slices.Equal(values, tt.want) {
+				t.Errorf("upstream execution IDs = %q, want %q", values, tt.want)
+			}
+			if got.Get("X-Test") != "preserved" {
+				t.Errorf("upstream X-Test = %q, want preserved", got.Get("X-Test"))
+			}
+		})
+	}
+}
 
 func TestRouter(t *testing.T) {
 	var receivedBody string
@@ -91,7 +195,7 @@ func TestRouter(t *testing.T) {
 
 	req.Header.Set("X-Test", "value")
 
-	req.Header = e2enginehttp.WithTestExecutionID(req.Header, "execution-1")
+	req.Header = e2enginehttp.WithTestExecutionID(req.Header, testExecutionID)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -134,7 +238,7 @@ func TestRouter(t *testing.T) {
 	}
 
 	calls := store.Get(call.Filter{
-		TestExecutionID: "execution-1",
+		TestExecutionID: testExecutionID,
 		ServiceID:       "service-1",
 	})
 
@@ -147,9 +251,10 @@ func TestRouter(t *testing.T) {
 
 	got := calls[0]
 
-	if got.TestExecutionID != "execution-1" {
+	if got.TestExecutionID != testExecutionID {
 		t.Errorf(
-			"expected execution ID execution-1, got %s",
+			"expected execution ID %s, got %s",
+			testExecutionID,
 			got.TestExecutionID,
 		)
 	}
@@ -290,7 +395,7 @@ func TestRouterProxyError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot create request: %v", err)
 	}
-	req.Header = e2enginehttp.WithTestExecutionID(req.Header, "execution-1")
+	req.Header = e2enginehttp.WithTestExecutionID(req.Header, testExecutionID)
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -307,7 +412,7 @@ func TestRouterProxyError(t *testing.T) {
 	}
 
 	calls := store.Get(call.Filter{
-		TestExecutionID: "execution-1",
+		TestExecutionID: testExecutionID,
 		ServiceID:       "service-1",
 	})
 
@@ -503,7 +608,7 @@ func TestRouterTruncatedBodyRecording(t *testing.T) {
 
 	req.Header = e2enginehttp.WithTestExecutionID(
 		req.Header,
-		"execution-1",
+		testExecutionID,
 	)
 
 	resp, err := http.DefaultClient.Do(req)
@@ -527,7 +632,7 @@ func TestRouterTruncatedBodyRecording(t *testing.T) {
 	}
 
 	calls := store.Get(call.Filter{
-		TestExecutionID: "execution-1",
+		TestExecutionID: testExecutionID,
 		ServiceID:       "service-1",
 	})
 
@@ -831,7 +936,7 @@ func TestRouterMaxResponseHeaderBytes(t *testing.T) {
 
 	req.Header = e2enginehttp.WithTestExecutionID(
 		req.Header,
-		"execution-1",
+		testExecutionID,
 	)
 
 	resp, err := http.DefaultClient.Do(req)
@@ -849,7 +954,7 @@ func TestRouterMaxResponseHeaderBytes(t *testing.T) {
 	}
 
 	calls := store.Get(call.Filter{
-		TestExecutionID: "execution-1",
+		TestExecutionID: testExecutionID,
 		ServiceID:       "service-1",
 	})
 

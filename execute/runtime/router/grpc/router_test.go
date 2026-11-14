@@ -22,6 +22,84 @@ import (
 	"github.com/e2engine/core/pkg/log"
 )
 
+const testExecutionID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+func TestRouterNormalizesExecutionIDUpstream(t *testing.T) {
+	upstreamMetadata := make(chan metadata.MD, 1)
+	upstream := newTestGRPCServer(t, func(_ any, stream grpcpkg.ServerStream) error {
+		var request rawMessage
+		if err := stream.RecvMsg(&request); err != nil {
+			return err
+		}
+		md, _ := metadata.FromIncomingContext(stream.Context())
+		upstreamMetadata <- md.Copy()
+		return stream.SendMsg(&request)
+	})
+	defer upstream.stop()
+
+	store := call.NewStoreFactory(&call.Config{
+		MaxCalls:         10,
+		MaxRecordedBytes: 1024 * 1024,
+	}).New()
+	router := newTestGRPCRouter(t, store)
+	router.Register(&runtime.Route{
+		ServiceID:      "service-1",
+		ListenAddress:  "127.0.0.1:0",
+		RuntimeAddress: upstream.address(),
+	})
+	if err := router.Mount(t.Context()); err != nil {
+		t.Fatalf("Mount() error = %v", err)
+	}
+	defer func() {
+		if err := router.Unmount(context.Background()); err != nil {
+			t.Errorf("Unmount() error = %v", err)
+		}
+	}()
+
+	connection, err := grpcpkg.NewClient(
+		router.mounted[0].listener.Addr().String(),
+		grpcpkg.WithTransportCredentials(insecure.NewCredentials()),
+		grpcpkg.WithDefaultCallOptions(grpcpkg.ForceCodec(rawCodec{})),
+	)
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+	defer connection.Close()
+
+	tests := []struct {
+		name   string
+		values []string
+		want   []string
+	}{
+		{name: "valid", values: []string{testExecutionID}, want: []string{testExecutionID}},
+		{name: "invalid", values: []string{"execution-1"}},
+		{name: "multiple", values: []string{testExecutionID, testExecutionID}},
+		{name: "missing"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			md := metadata.Pairs("x-test", "preserved")
+			for _, value := range tt.values {
+				md.Append("e2engine-test-execution-id", value)
+			}
+			ctx := metadata.NewOutgoingContext(t.Context(), md)
+			request := rawMessage{1, 2, 3}
+			var response rawMessage
+			if err := connection.Invoke(ctx, "/test.Service/Method", &request, &response); err != nil {
+				t.Fatalf("Invoke() error = %v", err)
+			}
+
+			got := <-upstreamMetadata
+			if values := got.Get("e2engine-test-execution-id"); !slices.Equal(values, tt.want) {
+				t.Errorf("upstream execution IDs = %q, want %q", values, tt.want)
+			}
+			if values := got.Get("x-test"); !slices.Equal(values, []string{"preserved"}) {
+				t.Errorf("upstream x-test = %q, want [preserved]", values)
+			}
+		})
+	}
+}
+
 func TestRawCodec(t *testing.T) {
 	codec := rawCodec{}
 
@@ -225,7 +303,7 @@ func TestRouter(t *testing.T) {
 				"x-request",
 				"request-value",
 			),
-			"execution-1",
+			testExecutionID,
 		),
 	)
 
@@ -293,7 +371,7 @@ func TestRouter(t *testing.T) {
 	}
 
 	calls := store.Get(call.Filter{
-		TestExecutionID: "execution-1",
+		TestExecutionID: testExecutionID,
 		ServiceID:       "service-1",
 	})
 
@@ -473,7 +551,7 @@ func TestRouterMessageSizeLimit(t *testing.T) {
 				t.Context(),
 				e2enginegrpc.WithTestExecutionID(
 					nil,
-					"execution-1",
+					testExecutionID,
 				),
 			)
 
@@ -505,7 +583,7 @@ func TestRouterMessageSizeLimit(t *testing.T) {
 			}
 
 			calls := store.Get(call.Filter{
-				TestExecutionID: "execution-1",
+				TestExecutionID: testExecutionID,
 				ServiceID:       "service-1",
 			})
 
@@ -616,7 +694,7 @@ func TestRouterUpstreamError(t *testing.T) {
 		context.Background(),
 		e2enginegrpc.WithTestExecutionID(
 			nil,
-			"execution-1",
+			testExecutionID,
 		),
 	)
 
@@ -638,7 +716,7 @@ func TestRouterUpstreamError(t *testing.T) {
 	}
 
 	calls := store.Get(call.Filter{
-		TestExecutionID: "execution-1",
+		TestExecutionID: testExecutionID,
 		ServiceID:       "service-1",
 	})
 
@@ -1084,7 +1162,7 @@ func TestRouterMetadataSizeLimit(t *testing.T) {
 						"x-request",
 						tt.requestValue,
 					),
-					"execution-1",
+					testExecutionID,
 				),
 			)
 
@@ -1149,7 +1227,7 @@ func TestRouterMetadataSizeLimit(t *testing.T) {
 			}
 
 			calls := store.Get(call.Filter{
-				TestExecutionID: "execution-1",
+				TestExecutionID: testExecutionID,
 				ServiceID:       "service-1",
 			})
 
