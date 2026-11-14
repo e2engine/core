@@ -5,15 +5,12 @@ import (
 	"strconv"
 
 	"github.com/ygrebnov/errorc"
-	modellib "github.com/ygrebnov/model"
 
 	"github.com/e2engine/core/pkg/errors"
 	"github.com/e2engine/core/pkg/keys"
 )
 
 type Environment Resource[EnvironmentSpec]
-
-var environmentBinding *modellib.Binding[Environment]
 
 func (e *Environment) Validate(ctx context.Context) error {
 	if e.Kind != ResourceKindEnvironment {
@@ -25,8 +22,13 @@ func (e *Environment) Validate(ctx context.Context) error {
 		)
 	}
 
-	if err := environmentBinding.Validate(ctx, e); err != nil {
-		return handleValidationError(err, EntityKindEnvironment)
+	binding, err := getEnvironmentBinding()
+	if err != nil {
+		return err
+	}
+
+	if errValidate := binding.Validate(ctx, e); errValidate != nil {
+		return handleValidationError(errValidate, EntityKindEnvironment)
 	}
 
 	if len(e.Spec.Services) == 0 {

@@ -6,9 +6,9 @@ import (
 	"net"
 	"net/url"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/ygrebnov/errorc"
 	modellib "github.com/ygrebnov/model"
@@ -19,87 +19,67 @@ import (
 	"github.com/e2engine/core/pkg/keys"
 )
 
-var validationRules []modellib.Rule
-
-func init() {
-	validationRules = make([]modellib.Rule, 9)
-
-	idRule, err := getIDRule()
-	if err != nil {
-		panic(err)
-	}
-
-	networkAddressRule, err := getNetworkAddressRule()
-	if err != nil {
-		panic(err)
-	}
-
-	httpURLRule, err := getHTTPURLRule()
-	if err != nil {
-		panic(err)
-	}
-
-	validJSONRule, err := getValidJSONRule()
-	if err != nil {
-		panic(err)
-	}
-
-	stringMatcherRule, err := matcher.GetStringMatcherRule()
-	if err != nil {
-		panic(err)
-	}
-
-	stringMatchersRule, err := matcher.GetStringMatchersRule()
-	if err != nil {
-		panic(err)
-	}
-
-	stringMatcherValidJSONRule, err := getStringMatcherValidJSONRule()
-	if err != nil {
-		panic(err)
-	}
-
-	grpcMessageMatcherRule, err := matcher.GetGRPCMessageMatcherRule()
-	if err != nil {
-		panic(err)
-	}
-
-	ipRule, err := getIPRule()
-	if err != nil {
-		panic(err)
-	}
-
-	validationRules[0] = idRule
-	validationRules[1] = networkAddressRule
-	validationRules[2] = httpURLRule
-	validationRules[3] = validJSONRule
-	validationRules[4] = stringMatcherRule
-	validationRules[5] = stringMatchersRule
-	validationRules[6] = stringMatcherValidJSONRule
-	validationRules[7] = grpcMessageMatcherRule
-	validationRules[8] = ipRule
-
-	environmentBinding, err = modellib.NewBinding[Environment](modellib.WithRules(validationRules...))
-	if err != nil {
-		panic(err)
-	}
-
-	testBinding, err = modellib.NewBinding[Test](modellib.WithRules(validationRules...))
-	if err != nil {
-		panic(err)
-	}
-
-	testSuiteBinding, err = modellib.NewBinding[TestSuite](modellib.WithRules(validationRules...))
-	if err != nil {
-		panic(err)
-	}
-}
+var (
+	rules    []modellib.Rule
+	newRules sync.Once
+)
 
 func GetValidationRules() []modellib.Rule {
-	return slices.Clone(validationRules)
+	newRules.Do(func() {
+		rules = []modellib.Rule{
+			getIDRule(),
+			getNetworkAddressRule(),
+			getHTTPURLRule(),
+			getValidJSONRule(),
+			matcher.GetStringMatcherRule(),
+			matcher.GetStringMatchersRule(),
+			getStringMatcherValidJSONRule(),
+			matcher.GetGRPCMessageMatcherRule(),
+			getIPRule(),
+		}
+	})
+
+	return rules
 }
 
-func getIDRule() (modellib.Rule, error) {
+var (
+	environmentBinding *modellib.Binding[Environment]
+	testBinding        *modellib.Binding[Test]
+	testSuiteBinding   *modellib.Binding[TestSuite]
+
+	newEnvironmentBinding sync.Once
+	newTestBinding        sync.Once
+	newTestSuiteBinding   sync.Once
+
+	environmentBindingErr error
+	testBindingErr        error
+	testSuiteBindingErr   error
+)
+
+func getEnvironmentBinding() (*modellib.Binding[Environment], error) {
+	newEnvironmentBinding.Do(func() {
+		environmentBinding, environmentBindingErr =
+			modellib.NewBinding[Environment](modellib.WithRules(GetValidationRules()...))
+	})
+	return environmentBinding, environmentBindingErr
+}
+
+func getTestBinding() (*modellib.Binding[Test], error) {
+	newTestBinding.Do(func() {
+		testBinding, testBindingErr = modellib.NewBinding[Test](modellib.WithRules(GetValidationRules()...))
+	})
+	return testBinding, testBindingErr
+}
+
+func getTestSuiteBinding() (*modellib.Binding[TestSuite], error) {
+	newTestSuiteBinding.Do(func() {
+		testSuiteBinding, testSuiteBindingErr =
+			modellib.NewBinding[TestSuite](modellib.WithRules(GetValidationRules()...))
+	})
+	return testSuiteBinding, testSuiteBindingErr
+}
+
+func getIDRule() modellib.Rule {
 	return modellib.NewRule("id", func(v string, _ ...string) error {
 		r := regexp.MustCompile("^[a-z0-9]{64}$")
 		if !r.MatchString(v) {
@@ -110,7 +90,7 @@ func getIDRule() (modellib.Rule, error) {
 	})
 }
 
-func getNetworkAddressRule() (modellib.Rule, error) {
+func getNetworkAddressRule() modellib.Rule {
 	return modellib.NewRule[string]("networkaddress", func(address string, _ ...string) error {
 		return validateNetworkAddress(address)
 	})
@@ -138,7 +118,7 @@ func validateNetworkAddress(address string) error {
 	return nil
 }
 
-func getHTTPURLRule() (modellib.Rule, error) {
+func getHTTPURLRule() modellib.Rule {
 	return modellib.NewRule[string](
 		"httpurl",
 		func(value string, _ ...string) error {
@@ -179,7 +159,7 @@ func validateHTTPURL(value string) error {
 	return nil
 }
 
-func getValidJSONRule() (modellib.Rule, error) {
+func getValidJSONRule() modellib.Rule {
 	return modellib.NewRule[string]("validjson", func(value string, _ ...string) error {
 		if !json.Valid([]byte(value)) {
 			return errorc.New("value must contain valid JSON")
@@ -189,7 +169,7 @@ func getValidJSONRule() (modellib.Rule, error) {
 	})
 }
 
-func getIPRule() (modellib.Rule, error) {
+func getIPRule() modellib.Rule {
 	return modellib.NewRule[string]("ip", func(ip string, _ ...string) error {
 		if net.ParseIP(ip) == nil {
 			return errorc.New("invalid E2Engine listen interface IP address")

@@ -106,7 +106,7 @@ func (m *String) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
-func GetStringMatchersRule() (modellib.Rule, error) {
+func GetStringMatchersRule() modellib.Rule {
 	return modellib.NewRule[[]String](
 		"stringmatchers",
 		func(values []String, _ ...string) error {
@@ -154,7 +154,7 @@ func GetStringMatchersRule() (modellib.Rule, error) {
 	)
 }
 
-func GetStringMatcherRule() (modellib.Rule, error) {
+func GetStringMatcherRule() modellib.Rule {
 	return modellib.NewRule[*String](
 		"stringmatcher",
 		func(value *String, _ ...string) error {
