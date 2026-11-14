@@ -8,6 +8,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 
+	e2engine "github.com/e2engine/instrumentation-go"
 	e2enginehttp "github.com/e2engine/instrumentation-go/http"
 
 	"github.com/e2engine/core/execute/call"
@@ -81,7 +82,7 @@ func (r *Router) Mount(ctx context.Context) error {
 		transport.ResponseHeaderTimeout = r.cfg.ResponseHeaderTimeout
 		transport.MaxResponseHeaderBytes = r.cfg.MaxResponseHeaderBytes
 
-		proxy.Transport = transport
+		proxy.Transport = e2enginehttp.Transport(transport)
 
 		proxy.ErrorHandler = func(
 			w http.ResponseWriter,
@@ -117,7 +118,7 @@ func (r *Router) Mount(ctx context.Context) error {
 			proxy.ServeHTTP(response, req)
 
 			if errRecord := r.calls.Record(call.Call{
-				TestExecutionID: e2enginehttp.TestExecutionID(req.Header),
+				TestExecutionID: validTestExecutionID(req.Header),
 				ServiceID:       route.ServiceID,
 				HTTP: &call.HTTPCall{
 					Request:  request.GetRequest(),
@@ -191,6 +192,15 @@ func (r *Router) Mount(ctx context.Context) error {
 	r.logger.Debug("Mounted router", log.Int("routes", len(r.services)))
 
 	return nil
+}
+
+func validTestExecutionID(header http.Header) string {
+	values := header.Values("E2Engine-Test-Execution-ID")
+	if len(values) != 1 || !e2engine.ValidTestExecutionID(values[0]) {
+		return ""
+	}
+
+	return values[0]
 }
 
 func (r *Router) Unmount(ctx context.Context) error {

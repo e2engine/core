@@ -278,6 +278,7 @@ func (r *Router) newHandler(
 			ctx,
 			incomingMetadata.Copy(),
 		)
+		outgoingContext = e2enginegrpc.Inject(outgoingContext)
 
 		var response rawMessage
 		var responseHeader metadata.MD

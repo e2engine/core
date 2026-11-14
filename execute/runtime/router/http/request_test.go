@@ -27,7 +27,7 @@ func TestRequestCapturer(t *testing.T) {
 	req.Header.Set("X-Test", "test")
 	req.Header = e2enginehttp.WithTestExecutionID(
 		req.Header,
-		"execution-1",
+		testExecutionID,
 	)
 
 	capturer := newRequestCapturer(req, 1024)
@@ -77,9 +77,10 @@ func TestRequestCapturer(t *testing.T) {
 		)
 	}
 
-	if id := e2enginehttp.TestExecutionID(got.Headers); id != "execution-1" {
+	if id := e2enginehttp.TestExecutionID(got.Headers); id != testExecutionID {
 		t.Errorf(
-			"expected execution ID execution-1, got %q",
+			"expected execution ID %q, got %q",
+			testExecutionID,
 			id,
 		)
 	}

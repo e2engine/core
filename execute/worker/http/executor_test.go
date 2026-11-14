@@ -17,6 +17,11 @@ import (
 	"github.com/e2engine/core/model/matcher"
 )
 
+const (
+	testExecutionID         = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	explicitTestExecutionID = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+)
+
 func TestBuildHTTPRequest(t *testing.T) {
 	ctx := context.Background()
 
@@ -93,7 +98,7 @@ func TestBuildHTTPRequest(t *testing.T) {
 				ctx,
 				tt.spec.URL,
 				tt.spec,
-				"execution-123",
+				testExecutionID,
 			)
 			if err != nil {
 				t.Fatalf(
@@ -129,10 +134,10 @@ func TestBuildHTTPRequest(t *testing.T) {
 
 			if id := e2enginehttp.TestExecutionID(
 				req.Header,
-			); id != "execution-123" {
+			); id != testExecutionID {
 				t.Errorf(
 					"expected execution ID header %q, got %q",
-					"execution-123",
+					testExecutionID,
 					id,
 				)
 			}
@@ -198,7 +203,7 @@ func TestBuildHTTPRequestQuery(t *testing.T) {
 		context.Background(),
 		spec.URL,
 		spec,
-		"execution-123",
+		testExecutionID,
 	)
 	if err != nil {
 		t.Fatalf(
@@ -249,7 +254,7 @@ func TestBuildHTTPRequestHeaders(t *testing.T) {
 					"value-2",
 				},
 			},
-			"user-value",
+			explicitTestExecutionID,
 		),
 	}
 
@@ -257,7 +262,7 @@ func TestBuildHTTPRequestHeaders(t *testing.T) {
 		context.Background(),
 		spec.URL,
 		spec,
-		"execution-123",
+		testExecutionID,
 	)
 	if err != nil {
 		t.Fatalf(
@@ -278,7 +283,7 @@ func TestBuildHTTPRequestHeaders(t *testing.T) {
 
 	if id := e2enginehttp.TestExecutionID(
 		req.Header,
-	); id != "execution-123" {
+	); id != testExecutionID {
 		t.Errorf(
 			"expected execution header to be overridden, got %s",
 			id,
@@ -301,7 +306,7 @@ func TestBuildHTTPRequestCanceledContext(t *testing.T) {
 		ctx,
 		spec.URL,
 		spec,
-		"execution-123",
+		testExecutionID,
 	)
 	if err != nil {
 		t.Fatalf(
@@ -330,7 +335,7 @@ func TestBuildHTTPRequestResolvedURL(t *testing.T) {
 		t.Context(),
 		resolvedURL,
 		spec,
-		"execution-123",
+		testExecutionID,
 	)
 	if err != nil {
 		t.Fatalf("buildHTTPRequest() error = %v", err)
@@ -468,10 +473,10 @@ func TestExecutorExecute(t *testing.T) {
 			) {
 				if id := e2enginehttp.TestExecutionID(
 					r.Header,
-				); id != "execution-123" {
+				); id != testExecutionID {
 					t.Errorf(
 						"expected execution ID %q, got %q",
-						"execution-123",
+						testExecutionID,
 						id,
 					)
 				}
@@ -515,7 +520,7 @@ func TestExecutorExecute(t *testing.T) {
 	)
 
 	job := &execute.TestJob{
-		ExecutionID: "execution-123",
+		ExecutionID: testExecutionID,
 		Test: model.Test{
 			Spec: model.TestSpec{
 				Request: model.RequestSpec{
@@ -557,10 +562,10 @@ func TestExecutorExecute(t *testing.T) {
 
 			if id := e2enginehttp.TestExecutionID(
 				req.Header,
-			); id != "execution-123" {
+			); id != testExecutionID {
 				t.Errorf(
 					"expected execution ID header %q, got %q",
-					"execution-123",
+					testExecutionID,
 					id,
 				)
 			}
@@ -635,7 +640,7 @@ func TestExecutorExecuteAddressResolutionError(t *testing.T) {
 		Return("", resolveErr)
 
 	job := &execute.TestJob{
-		ExecutionID: "execution-123",
+		ExecutionID: testExecutionID,
 		Test: model.Test{
 			Spec: model.TestSpec{
 				Request: model.RequestSpec{
