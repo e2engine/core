@@ -76,7 +76,7 @@ func readOpenedFile(file *os.File, path string) ([]byte, error) {
 //
 // It does not restrict the file to a particular directory.
 func ValidateFilePath(path string) error {
-	file, err := os.Open(path)
+	file, err := openReadFile(path)
 	if err != nil {
 		return errorc.With(
 			errors.ErrInaccessiblePath,
@@ -94,7 +94,7 @@ func ValidateFilePath(path string) error {
 // It is not a directory confinement boundary.
 // Use ReadFileWithinRoot when directory confinement is required.
 func ReadFile(path string) ([]byte, error) {
-	file, err := os.Open(path)
+	file, err := openReadFile(path)
 	if err != nil {
 		return nil, errorc.With(
 			errors.ErrInaccessiblePath,
@@ -130,7 +130,7 @@ func ReadFileWithinRoot(root, path string) ([]byte, error) {
 	}
 	defer dir.Close()
 
-	file, err := dir.Open(path)
+	file, err := openRootReadFile(dir, path)
 	if err != nil {
 		return nil, errorc.With(
 			errors.ErrInaccessiblePath,
