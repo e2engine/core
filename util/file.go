@@ -1,74 +1,31 @@
 package util
 
 import (
-	"io"
+	"errors"
 	"os"
 	"path/filepath"
 
 	"github.com/ygrebnov/errorc"
+	sharedfs "github.com/ygrebnov/fs"
 
-	"github.com/e2engine/core/pkg/errors"
+	coreerrors "github.com/e2engine/core/pkg/errors"
 	"github.com/e2engine/core/pkg/keys"
 )
 
 // MaxFileSize limits files loaded into memory through this package.
 const MaxFileSize int64 = 16 << 20 // 16 MiB
 
-// validateRegularFile checks the opened file rather than a separate path lookup.
-func validateRegularFile(file *os.File, path string) error {
-	info, err := file.Stat()
-	if err != nil {
-		return errorc.With(
-			errors.ErrInaccessiblePath,
-			errorc.String(keys.FilePath, path),
-			errorc.Error(keys.Cause, err),
-		)
+func fileError(path string, err error) error {
+	fields := []errorc.Field{errorc.String(keys.FilePath, path)}
+	switch {
+	case errors.Is(err, sharedfs.ErrNotRegularFile):
+		fields = append(fields, errorc.String(keys.Validation, "not a regular file"))
+	case errors.Is(err, sharedfs.ErrExceedsFileSizeLimit):
+		fields = append(fields, errorc.String(keys.Validation, "file size exceeds maximum allowed"))
+	default:
+		fields = append(fields, errorc.Error(keys.Cause, err))
 	}
-
-	if !info.Mode().IsRegular() {
-		return errorc.With(
-			errors.ErrInaccessiblePath,
-			errorc.String(keys.FilePath, path),
-			errorc.String(keys.Validation, "not a regular file"),
-		)
-	}
-
-	if info.Size() > MaxFileSize {
-		return errorc.With(
-			errors.ErrInaccessiblePath,
-			errorc.String(keys.FilePath, path),
-			errorc.String(keys.Validation, "file size exceeds maximum allowed"),
-		)
-	}
-
-	return nil
-}
-
-func readOpenedFile(file *os.File, path string) ([]byte, error) {
-	if err := validateRegularFile(file, path); err != nil {
-		return nil, err
-	}
-
-	data, err := io.ReadAll(
-		io.LimitReader(file, MaxFileSize+1),
-	)
-	if err != nil {
-		return nil, errorc.With(
-			errors.ErrInaccessiblePath,
-			errorc.String(keys.FilePath, path),
-			errorc.Error(keys.Cause, err),
-		)
-	}
-
-	if int64(len(data)) > MaxFileSize {
-		return nil, errorc.With(
-			errors.ErrInaccessiblePath,
-			errorc.String(keys.FilePath, path),
-			errorc.String(keys.Validation, "file size exceeds maximum allowed"),
-		)
-	}
-
-	return data, nil
+	return errorc.With(coreerrors.ErrInaccessiblePath, fields...)
 }
 
 // ValidateFilePath checks that path names an accessible, regular file
@@ -76,17 +33,20 @@ func readOpenedFile(file *os.File, path string) ([]byte, error) {
 //
 // It does not restrict the file to a particular directory.
 func ValidateFilePath(path string) error {
-	file, err := openReadFile(path)
+	file, err := sharedfs.OpenRegularRead(path)
 	if err != nil {
-		return errorc.With(
-			errors.ErrInaccessiblePath,
-			errorc.String(keys.FilePath, path),
-			errorc.Error(keys.Cause, err),
-		)
+		return fileError(path, err)
 	}
 	defer file.Close()
 
-	return validateRegularFile(file, path)
+	info, err := file.Stat()
+	if err != nil {
+		return fileError(path, err)
+	}
+	if info.Size() > MaxFileSize {
+		return fileError(path, sharedfs.ErrExceedsFileSizeLimit)
+	}
+	return nil
 }
 
 // ReadFile reads an accessible, regular file up to MaxFileSize.
@@ -94,17 +54,11 @@ func ValidateFilePath(path string) error {
 // It is not a directory confinement boundary.
 // Use ReadFileWithinRoot when directory confinement is required.
 func ReadFile(path string) ([]byte, error) {
-	file, err := openReadFile(path)
+	data, err := sharedfs.ReadFile(path, MaxFileSize)
 	if err != nil {
-		return nil, errorc.With(
-			errors.ErrInaccessiblePath,
-			errorc.String(keys.FilePath, path),
-			errorc.Error(keys.Cause, err),
-		)
+		return nil, fileError(path, err)
 	}
-	defer file.Close()
-
-	return readOpenedFile(file, path)
+	return data, nil
 }
 
 // ReadFileWithinRoot reads a file confined to root.
@@ -114,7 +68,7 @@ func ReadFile(path string) ([]byte, error) {
 func ReadFileWithinRoot(root, path string) ([]byte, error) {
 	if filepath.IsAbs(path) || path == "" {
 		return nil, errorc.With(
-			errors.ErrInaccessiblePath,
+			coreerrors.ErrInaccessiblePath,
 			errorc.String(keys.FilePath, path),
 			errorc.String(keys.Validation, "path must be non-empty and relative to root"),
 		)
@@ -122,23 +76,13 @@ func ReadFileWithinRoot(root, path string) ([]byte, error) {
 
 	dir, err := os.OpenRoot(root)
 	if err != nil {
-		return nil, errorc.With(
-			errors.ErrInaccessiblePath,
-			errorc.String(keys.FilePath, root),
-			errorc.Error(keys.Cause, err),
-		)
+		return nil, fileError(root, err)
 	}
 	defer dir.Close()
 
-	file, err := openRootReadFile(dir, path)
+	data, err := sharedfs.ReadFileWithinRoot(dir, path, MaxFileSize)
 	if err != nil {
-		return nil, errorc.With(
-			errors.ErrInaccessiblePath,
-			errorc.String(keys.FilePath, path),
-			errorc.Error(keys.Cause, err),
-		)
+		return nil, fileError(path, err)
 	}
-	defer file.Close()
-
-	return readOpenedFile(file, path)
+	return data, nil
 }
