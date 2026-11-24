@@ -2,11 +2,9 @@
 
 Core domain model, execution logic, and public APIs for E2Engine.
 
-This module provides the shared models and execution components used across E2Engine, including test and environment definitions, test execution, runtime service management, scheduling, persistence interfaces, and transport primitives.
-
 Part of [E2Engine](https://e2engine.dev), an open-source platform for declarative end-to-end testing.
 
-E2Engine project on GitHub: [E2Engine on GitHub](https://github.com/e2engine).
+This module provides the shared models and execution components used across E2Engine, including test and environment definitions, test execution, runtime service management, scheduling, persistence interfaces, and transport primitives.
 
 ## Installation
 
@@ -65,6 +63,12 @@ Run the complete verification suite:
 ```bash
 make verify
 ```
+
+## Links
+
+- [E2Engine website](https://e2engine.dev)
+- [E2Engine documentation](https://e2engine.dev/docs)
+- [E2Engine on GitHub](https://github.com/e2engine)
 
 ## License
 
