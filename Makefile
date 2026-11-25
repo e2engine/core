@@ -15,9 +15,9 @@ mockgen: install-mockgen
 	@echo "Generating mocks..."
 	@rm -rf mock
 	@mkdir -p mock
-	$(MOCKGEN) -destination=mock/Repository.go -package=mock github.com/e2engine/core/repository EntityRepository,ResourceRepository,TestRepository,TestExecutionRepository,TestSuiteExecutionRepository
-	$(MOCKGEN) -destination=mock/Runtime.go -package=mock github.com/e2engine/core/execute/runtime Service,ServiceProvider,Router,RouterProvider
-	$(MOCKGEN) -destination=mock/Execute.go -package=mock github.com/e2engine/core/execute ProtocolExecutor
+	$(MOCKGEN_LINK) -destination=mock/Repository.go -package=mock github.com/e2engine/core/repository EntityRepository,ResourceRepository,TestRepository,TestExecutionRepository,TestSuiteExecutionRepository
+	$(MOCKGEN_LINK) -destination=mock/Runtime.go -package=mock github.com/e2engine/core/execute/runtime Service,ServiceProvider,Router,RouterProvider
+	$(MOCKGEN_LINK) -destination=mock/Execute.go -package=mock github.com/e2engine/core/execute ProtocolExecutor
 	go generate ./...
 	@git diff HEAD --exit-code -- $(MOCK_GENERATED_PATHS)
 	@test -z "$$(git ls-files --others --exclude-standard -- $(MOCK_GENERATED_PATHS))"
