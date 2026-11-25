@@ -1,5 +1,6 @@
 ROOT_PATH := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 COVERAGE_PATH := $(ROOT_PATH).coverage/
+MOCK_GENERATED_PATHS := mock/ ':(glob)**/mock_*_test.go'
 
 # Use the locally installed Go toolchain.
 export GOTOOLCHAIN=local
@@ -18,6 +19,8 @@ mockgen: install-mockgen
 	$(MOCKGEN) -destination=mock/Runtime.go -package=mock github.com/e2engine/core/execute/runtime Service,ServiceProvider,Router,RouterProvider
 	$(MOCKGEN) -destination=mock/Execute.go -package=mock github.com/e2engine/core/execute ProtocolExecutor
 	go generate ./...
+	@git diff HEAD --exit-code -- $(MOCK_GENERATED_PATHS)
+	@test -z "$$(git ls-files --others --exclude-standard -- $(MOCK_GENERATED_PATHS))"
 
 .PHONY: lint
 lint: install-golangci-lint
