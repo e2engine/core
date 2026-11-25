@@ -98,10 +98,7 @@ func (e *Environment) Mount(ctx context.Context) error {
 	}
 
 	if err := e.router.Mount(ctx); err != nil {
-		rErr := errorc.With(
-			errors.ErrFailedToMountRouter,
-			errorc.Error(keys.Cause, err),
-		)
+		rErr := errorc.WithCause(errors.ErrFailedToMountRouter, err)
 		return nativeerrors.Join(rErr, e.cleanupRouterAndServices(len(e.services)-1))
 	}
 

@@ -177,7 +177,7 @@ func newEnvironmentFromRepository(r *repository.Environment) (*model.Environment
 
 	var spec model.EnvironmentSpec
 	if err := json.Unmarshal(r.Spec, &spec); err != nil {
-		return nil, errorc.With(errors.ErrCannotParseSpec, errorc.Error(keys.Cause, err))
+		return nil, errorc.WithCause(errors.ErrCannotParseSpec, err)
 	}
 
 	return &model.Environment{

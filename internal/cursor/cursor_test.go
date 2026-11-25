@@ -4,11 +4,16 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	nativeerrors "errors"
 	"strings"
 	"testing"
 
+	"github.com/ygrebnov/errorc"
+	"github.com/ygrebnov/model/validation"
+
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/pkg/errors"
+	"github.com/e2engine/core/pkg/keys"
 )
 
 var id1 = "28b94fc0206dfb7960905c372905772441cc41d3cde3dcd274543e6b4435367f"
@@ -399,6 +404,45 @@ func TestEncodeParseNearMaxCursorLength(t *testing.T) {
 			len(decoded.Value),
 			len(payload.Value),
 		)
+	}
+}
+
+func TestParseRetainsCauses(t *testing.T) {
+	binding, err := GetBinding()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	invalidJSON := base64.RawURLEncoding.EncodeToString([]byte(`{"version":`))
+	_, err = Parse(t.Context(), binding, invalidJSON)
+	if !nativeerrors.Is(err, errors.ErrCannotDecodeCursor) {
+		t.Fatalf("Parse() error = %v, want ErrCannotDecodeCursor", err)
+	}
+	var syntaxErr *json.SyntaxError
+	if !nativeerrors.As(err, &syntaxErr) {
+		t.Fatalf("Parse() error = %v, want *json.SyntaxError in chain", err)
+	}
+	if cause, ok := errorc.Lookup[error](err, keys.Cause); !ok || cause != syntaxErr {
+		t.Fatalf("cause field = %v, %v; want %v", cause, ok, syntaxErr)
+	}
+
+	invalidPayload := encodeRawPayload(t, Payload{
+		Version:        CurrentVersion,
+		ID:             id1,
+		Position:       PositionAfter,
+		OrderBy:        model.OrderByID,
+		OrderDirection: model.OrderDirectionAsc,
+	})
+	_, err = Parse(t.Context(), binding, invalidPayload)
+	if !nativeerrors.Is(err, errors.ErrInvalidCursor) {
+		t.Fatalf("Parse() error = %v, want ErrInvalidCursor", err)
+	}
+	var validationErr *validation.Error
+	if !nativeerrors.As(err, &validationErr) {
+		t.Fatalf("Parse() error = %v, want *validation.Error in chain", err)
+	}
+	if cause, ok := errorc.Lookup[error](err, keys.Cause); !ok || cause != validationErr {
+		t.Fatalf("cause field = %v, %v; want %v", cause, ok, validationErr)
 	}
 }
 

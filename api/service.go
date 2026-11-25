@@ -80,9 +80,7 @@ func WithRuntimeConfig(config *runtimeconfig.Config) Option {
 func getSettings(opts ...Option) (*settings, error) {
 	logger, err := log.NewSilentLogger()
 	if err != nil {
-		return nil, errorc.With(
-			errors.ErrCannotInitializeLogger, errorc.Error(keys.Cause, err),
-		)
+		return nil, errorc.WithCause(errors.ErrCannotInitializeLogger, err)
 	}
 
 	s := &settings{

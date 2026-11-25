@@ -174,7 +174,7 @@ func newTestSuiteFromRepository(r *repository.TestSuite) (*model.TestSuite, erro
 
 	var spec model.TestSuiteSpec
 	if err := json.Unmarshal(r.Spec, &spec); err != nil {
-		return nil, errorc.With(errors.ErrCannotParseSpec, errorc.Error(keys.Cause, err))
+		return nil, errorc.WithCause(errors.ErrCannotParseSpec, err)
 	}
 
 	return &model.TestSuite{

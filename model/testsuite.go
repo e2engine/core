@@ -24,7 +24,11 @@ func (t *TestSuite) Validate(ctx context.Context) error {
 	}
 
 	if errValidate := binding.Validate(ctx, t); errValidate != nil {
-		return handleValidationError(errValidate, EntityKindTestSuite)
+		return errorc.With(
+			errors.ErrInvalidSpec,
+			errorc.String(keys.SpecKind, string(EntityKindTestSuite)),
+			errorc.Error(keys.Validation, errValidate),
+		)
 	}
 
 	if fields, err := t.Spec.Selectors.Validate(); err != nil {
@@ -43,7 +47,7 @@ func invalidTestSuiteSpec(validation error, fields string) error {
 		errors.ErrInvalidSpec,
 		errorc.String(keys.SpecKind, string(EntityKindTestSuite)),
 		errorc.String(keys.Fields, fields),
-		errorc.String(keys.Validation, validation.Error()),
+		errorc.Error(keys.Validation, validation),
 	)
 }
 

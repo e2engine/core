@@ -222,10 +222,7 @@ func (e *Evaluator) Matches(
 		actual.GRPC.Request.Message,
 		actualMessage,
 	); err != nil {
-		return false, errorc.With(
-			ErrCannotDecodeCapturedRequest,
-			errorc.Error(keys.Cause, err),
-		)
+		return false, errorc.WithCause(ErrCannotDecodeCapturedRequest, err)
 	}
 
 	return match.IsGRPCMessageMatched(

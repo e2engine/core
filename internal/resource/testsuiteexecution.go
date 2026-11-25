@@ -9,7 +9,6 @@ import (
 
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/pkg/errors"
-	"github.com/e2engine/core/pkg/keys"
 	"github.com/e2engine/core/repository"
 )
 
@@ -177,10 +176,7 @@ func newTestSuiteExecutionFromRepository(r *repository.TestSuiteExecution) (*mod
 	if len(r.Summary) > 0 {
 		var summary model.TestSuiteExecutionSummary
 		if err := json.Unmarshal(r.Summary, &summary); err != nil {
-			return nil, errorc.With(
-				errors.ErrCannotParseTestSuiteExecutionSummary,
-				errorc.Error(keys.Cause, err),
-			)
+			return nil, errorc.WithCause(errors.ErrCannotParseTestSuiteExecutionSummary, err)
 		}
 		tse.Summary = &summary
 	}

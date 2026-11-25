@@ -54,18 +54,12 @@ func Parse(ctx context.Context, binding *modellib.Binding[Payload], opaque strin
 
 	data, err := base64.RawURLEncoding.DecodeString(opaque)
 	if err != nil {
-		return Payload{}, errorc.With(
-			errors.ErrCannotDecodeCursor,
-			errorc.Error(keys.Cause, err),
-		)
+		return Payload{}, errorc.WithCause(errors.ErrCannotDecodeCursor, err)
 	}
 
 	var payload Payload
 	if err := json.Unmarshal(data, &payload); err != nil {
-		return Payload{}, errorc.With(
-			errors.ErrCannotDecodeCursor,
-			errorc.Error(keys.Cause, err),
-		)
+		return Payload{}, errorc.WithCause(errors.ErrCannotDecodeCursor, err)
 	}
 
 	if payload.Version != CurrentVersion {
@@ -77,10 +71,7 @@ func Parse(ctx context.Context, binding *modellib.Binding[Payload], opaque strin
 	}
 
 	if err := binding.Validate(ctx, &payload); err != nil {
-		return Payload{}, errorc.With(
-			errors.ErrInvalidCursor,
-			errorc.Error(keys.Cause, err),
-		)
+		return Payload{}, errorc.WithCause(errors.ErrInvalidCursor, err)
 	}
 
 	return payload, nil
@@ -88,25 +79,16 @@ func Parse(ctx context.Context, binding *modellib.Binding[Payload], opaque strin
 
 func Encode(ctx context.Context, binding *modellib.Binding[Payload], payload Payload) (string, error) {
 	if err := binding.ApplyDefaults(&payload); err != nil {
-		return "", errorc.With(
-			errors.ErrCannotComposeCursorPayload,
-			errorc.Error(keys.Cause, err),
-		)
+		return "", errorc.WithCause(errors.ErrCannotComposeCursorPayload, err)
 	}
 
 	if err := binding.Validate(ctx, &payload); err != nil {
-		return "", errorc.With(
-			errors.ErrInvalidCursor,
-			errorc.Error(keys.Cause, err),
-		)
+		return "", errorc.WithCause(errors.ErrInvalidCursor, err)
 	}
 
 	data, err := json.Marshal(payload)
 	if err != nil {
-		return "", errorc.With(
-			errors.ErrCannotEncodeCursor,
-			errorc.Error(keys.Cause, err),
-		)
+		return "", errorc.WithCause(errors.ErrCannotEncodeCursor, err)
 	}
 
 	encoded := base64.RawURLEncoding.EncodeToString(data)
