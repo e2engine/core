@@ -193,7 +193,7 @@ func (r *Router) Mount(ctx context.Context) error {
 
 		go func() {
 			err := server.Serve(listener)
-			if err != nil {
+			if err != nil && !nativeerrors.Is(err, grpcpkg.ErrServerStopped) {
 				r.logger.Error(
 					"Environment gRPC router listener stopped unexpectedly",
 					log.String(
@@ -421,6 +421,12 @@ func (r *Router) unmountMountedRoutes(
 			)
 
 		case <-done:
+		}
+
+		// Stop may run before Serve registers the listener.
+		if err := route.listener.Close(); err != nil &&
+			!nativeerrors.Is(err, net.ErrClosed) {
+			accErr = nativeerrors.Join(accErr, err)
 		}
 
 		if err := route.connection.Close(); err != nil {

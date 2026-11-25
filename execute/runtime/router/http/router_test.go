@@ -474,7 +474,7 @@ func TestRouterUnmountCancelledContext(t *testing.T) {
 		t.Fatalf("Mount() error = %v", err)
 	}
 
-	address := router.mounted[0].listener.Addr().String()
+	listener := router.mounted[0].listener
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -492,10 +492,19 @@ func TestRouterUnmountCancelledContext(t *testing.T) {
 		t.Fatal("expected mounted routes to be cleared")
 	}
 
-	conn, err := net.DialTimeout("tcp", address, time.Second)
+	if err := listener.(*net.TCPListener).SetDeadline(
+		time.Now().Add(time.Second),
+	); err != nil && !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("SetDeadline() error = %v", err)
+	}
+
+	conn, err := listener.Accept()
 	if err == nil {
 		_ = conn.Close()
 		t.Fatal("listener still accepts connections after unmount")
+	}
+	if !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("Accept() error = %v, want net.ErrClosed", err)
 	}
 }
 
