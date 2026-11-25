@@ -21,7 +21,7 @@ import (
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/pkg/errors"
 	"github.com/e2engine/core/pkg/keys"
-	"github.com/e2engine/core/util"
+	"github.com/e2engine/core/util/fs"
 )
 
 type DescriptorLoader interface {
@@ -135,7 +135,7 @@ func (r *ProtoMethodResolver) loadFile(
 		)
 	}
 
-	if errValidate := util.ValidateFilePath(absolutePath); errValidate != nil {
+	if errValidate := fs.ValidateFilePath(absolutePath); errValidate != nil {
 		return nil, errorc.With(
 			errors.ErrInaccessiblePath,
 			errorc.String(keys.FilePath, path),
@@ -156,7 +156,7 @@ func (r *ProtoMethodResolver) loadFile(
 		Resolver: protocompile.WithStandardImports(
 			&protocompile.SourceResolver{
 				Accessor: func(name string) (io.ReadCloser, error) {
-					data, errRead := util.ReadFileWithinRoot(root, name)
+					data, errRead := fs.ReadFileWithinRoot(root, name)
 					if errRead != nil {
 						return nil, errRead
 					}

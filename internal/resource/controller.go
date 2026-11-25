@@ -6,7 +6,6 @@ import (
 
 	"github.com/e2engine/core/internal/cursor"
 	"github.com/e2engine/core/pkg/errors"
-	"github.com/e2engine/core/pkg/keys"
 	"github.com/e2engine/core/repository"
 )
 
@@ -34,10 +33,7 @@ func NewController(
 ) (*Controller, error) {
 	cursorBinding, err := cursor.GetBinding()
 	if err != nil {
-		return nil, errorc.With(
-			errors.ErrCannotConstructCursorPayloadBinding,
-			errorc.Error(keys.Cause, err),
-		)
+		return nil, errorc.WithCause(errors.ErrCannotConstructCursorPayloadBinding, err)
 	}
 
 	return &Controller{

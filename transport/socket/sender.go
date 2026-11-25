@@ -36,10 +36,7 @@ func (s *Sender) Send(
 	// Serialize before establishing the connection.
 	data, err := json.Marshal(message)
 	if err != nil {
-		return errorc.With(
-			ErrCannotSendMessage,
-			errorc.Error(keys.Cause, err),
-		)
+		return errorc.WithCause(ErrCannotSendMessage, err)
 	}
 
 	// Account for the newline appended by json.Encoder.Encode.

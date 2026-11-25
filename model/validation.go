@@ -2,7 +2,6 @@ package model
 
 import (
 	"encoding/json"
-	nativeerrors "errors"
 	"net"
 	"net/url"
 	"regexp"
@@ -13,11 +12,8 @@ import (
 
 	"github.com/ygrebnov/errorc"
 	modellib "github.com/ygrebnov/model"
-	"github.com/ygrebnov/model/validation"
 
 	"github.com/e2engine/core/model/matcher"
-	"github.com/e2engine/core/pkg/errors"
-	"github.com/e2engine/core/pkg/keys"
 )
 
 var (
@@ -177,33 +173,4 @@ func getIPRule() modellib.Rule {
 		}
 		return nil
 	})
-}
-
-func handleValidationError(err error, specKind EntityKind) error {
-	var fields string
-
-	if validationErr, ok := nativeerrors.AsType[*validation.Error](err); ok {
-		fields = strings.Join(validationErr.Fields(), ", ")
-
-		validationErrs := make([]string, 0, validationErr.Len())
-		for _, path := range validationErr.Fields() {
-			for _, fieldErr := range validationErr.ForField(path) {
-				validationErrs = append(validationErrs, fieldErr.Err.Error())
-			}
-		}
-		combinedErr := strings.Join(validationErrs, ", ")
-
-		return errorc.With(
-			errors.ErrInvalidSpec,
-			errorc.String(keys.SpecKind, string(specKind)),
-			errorc.String(keys.Fields, fields),
-			errorc.String(keys.Validation, combinedErr),
-		)
-	}
-
-	return errorc.With(
-		errors.ErrInvalidSpec,
-		errorc.String(keys.SpecKind, string(specKind)),
-		errorc.String(keys.Validation, err.Error()),
-	)
 }

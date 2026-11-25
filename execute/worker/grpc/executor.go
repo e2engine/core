@@ -17,7 +17,6 @@ import (
 	servicegrpc "github.com/e2engine/core/execute/runtime/service/grpc"
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/pkg/errors"
-	"github.com/e2engine/core/pkg/keys"
 )
 
 type TestExecutor struct {
@@ -82,10 +81,7 @@ func (e *TestExecutor) Execute(
 		spec.Message,
 		request,
 	); errUnmarshal != nil {
-		return errorc.With(
-			errors.ErrCannotBuildGRPCRequest,
-			errorc.Error(keys.Cause, errUnmarshal),
-		)
+		return errorc.WithCause(errors.ErrCannotBuildGRPCRequest, errUnmarshal)
 	}
 
 	if proto.Size(request) > e.cfg.MaxMessageSize {

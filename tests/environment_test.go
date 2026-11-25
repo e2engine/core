@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/ygrebnov/model/validation"
 	"go.uber.org/mock/gomock"
 
 	core "github.com/e2engine/core/api"
@@ -16,6 +18,7 @@ import (
 	"github.com/e2engine/core/model"
 	pkgerrors "github.com/e2engine/core/pkg/errors"
 	"github.com/e2engine/core/repository"
+	"github.com/e2engine/core/util/render"
 )
 
 func TestEnvironment_Create(t *testing.T) {
@@ -56,6 +59,13 @@ func TestEnvironment_Create(t *testing.T) {
 				err,
 				pkgerrors.ErrInvalidRequestParameters,
 			)
+		}
+		var validationErr *validation.Error
+		if !errors.As(err, &validationErr) || len(validationErr.Issues()) == 0 {
+			t.Fatalf("CreateEnvironment() error = %v, want validation issues in chain", err)
+		}
+		if rendered := render.ValidationError(err); !strings.Contains(rendered, "fields: Name, validation:") {
+			t.Fatalf("rendered validation error = %q, want concise Name validation", rendered)
 		}
 	})
 

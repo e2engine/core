@@ -13,7 +13,7 @@ import (
 
 	"github.com/e2engine/core/model"
 	"github.com/e2engine/core/pkg/errors"
-	"github.com/e2engine/core/util"
+	"github.com/e2engine/core/util/fs"
 )
 
 func TestProtoMethodResolverResolveExternalModule(t *testing.T) {
@@ -935,7 +935,7 @@ message Secret {}
 				defer file.Close()
 
 				if err := file.Truncate(
-					util.MaxFileSize + 1,
+					fs.MaxFileSize + 1,
 				); err != nil {
 					t.Fatal(err)
 				}
@@ -1014,7 +1014,7 @@ func TestProtoMethodResolverResolveExternalFileTooLarge(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := file.Truncate(util.MaxFileSize + 1); err != nil {
+	if err := file.Truncate(fs.MaxFileSize + 1); err != nil {
 		_ = file.Close()
 		t.Fatal(err)
 	}

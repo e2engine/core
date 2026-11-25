@@ -28,7 +28,11 @@ func (e *Environment) Validate(ctx context.Context) error {
 	}
 
 	if errValidate := binding.Validate(ctx, e); errValidate != nil {
-		return handleValidationError(errValidate, EntityKindEnvironment)
+		return errorc.With(
+			errors.ErrInvalidSpec,
+			errorc.String(keys.SpecKind, string(EntityKindEnvironment)),
+			errorc.Error(keys.Validation, errValidate),
+		)
 	}
 
 	if len(e.Spec.Services) == 0 {
@@ -298,7 +302,7 @@ func (s *ServiceSpec) Validate(index int) error {
 						keys.Fields,
 						"Spec.Services["+strconv.Itoa(index)+"].Target",
 					),
-					errorc.String(keys.Validation, err.Error()),
+					errorc.Error(keys.Validation, err),
 				)
 			}
 		case ServiceKindGRPC:
@@ -310,7 +314,7 @@ func (s *ServiceSpec) Validate(index int) error {
 						keys.Fields,
 						"Spec.Services["+strconv.Itoa(index)+"].Target",
 					),
-					errorc.String(keys.Validation, err.Error()),
+					errorc.Error(keys.Validation, err),
 				)
 			}
 		}
@@ -355,7 +359,7 @@ func (s *ServiceSpec) Validate(index int) error {
 						keys.Fields,
 						"Spec.Services["+strconv.Itoa(index)+"].Fixtures["+strconv.Itoa(i)+"].When.HTTP",
 					),
-					errorc.String(keys.Validation, err.Error()),
+					errorc.Error(keys.Validation, err),
 				)
 			}
 
@@ -367,7 +371,7 @@ func (s *ServiceSpec) Validate(index int) error {
 						keys.Fields,
 						"Spec.Services["+strconv.Itoa(index)+"].Fixtures["+strconv.Itoa(i)+"].Then.HTTP",
 					),
-					errorc.String(keys.Validation, err.Error()),
+					errorc.Error(keys.Validation, err),
 				)
 			}
 

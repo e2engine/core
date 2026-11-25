@@ -180,7 +180,7 @@ func newTestFromRepository(r *repository.Test) (*model.Test, error) {
 
 	var spec model.TestSpec
 	if err := json.Unmarshal(r.Spec, &spec); err != nil {
-		return nil, errorc.With(errors.ErrCannotParseSpec, errorc.Error(keys.Cause, err))
+		return nil, errorc.WithCause(errors.ErrCannotParseSpec, err)
 	}
 
 	return &model.Test{
